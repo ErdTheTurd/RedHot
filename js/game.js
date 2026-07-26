@@ -10,11 +10,12 @@ import { updateBot } from './bots.js';
 import { SFX } from './audio.js';
 
 export class Game {
-  constructor({ scene, camera, input, ui }) {
+  constructor({ scene, camera, input, ui, inventory }) {
     this.scene = scene;
     this.camera = camera;
     this.input = input;
     this.ui = ui;
+    this.inventory = inventory;
     this.map = createMap(scene);
     this.units = [];
     this.player = null;
@@ -70,17 +71,12 @@ export class Game {
       isPlayer: true,
       spawn: team === TEAMS.RAIDERS ? spawnsR[0] : spawnsS[0],
       vehicleId: 'scout_tracker',
+      getSkin: (vid) => this.inventory?.getEquipped(vid) || null,
     });
     this.player.money = START_MONEY;
     this.scene.add(this.player.mesh);
     this.units.push(this.player);
 
-    // 4v4 bots
-    for (let i = 0; i < 4; i++) {
-      if (team === TEAMS.RAIDERS && i === 0) {
-        // player already fills first raider slot conceptually — still add 3 raider bots + 4 sentinels
-      }
-    }
     const raiderBots = team === TEAMS.RAIDERS ? 3 : 4;
     const sentinelBots = team === TEAMS.SENTINELS ? 3 : 4;
 
@@ -223,16 +219,22 @@ export class Game {
     else SFX.roundLoss();
 
     if (this.score.raiders >= ROUNDS_TO_WIN || this.score.sentinels >= ROUNDS_TO_WIN) {
+      const playerWon =
+        (this.score.raiders > this.score.sentinels && this.player.team === TEAMS.RAIDERS) ||
+        (this.score.sentinels > this.score.raiders && this.player.team === TEAMS.SENTINELS);
+      const deposit = 400 + this.player.kills * 80 + (playerWon ? 900 : 250) + Math.floor(this.player.money * 0.15);
+      this.inventory?.recordMatch(playerWon, deposit);
       setTimeout(() => {
         this.ui.showBanner(
           this.score.raiders > this.score.sentinels ? 'RAIDERS MATCH WIN' : 'SENTINELS MATCH WIN',
-          `${this.score.raiders} – ${this.score.sentinels}`
+          `Bank +${deposit} · ${this.score.raiders} – ${this.score.sentinels}`
         );
         setTimeout(() => {
           this.running = false;
           this.ui.hideAllScreens();
           document.getElementById('hud').classList.add('hidden');
           this.input.exitLock();
+          this.ui.refreshMeta?.();
           this.ui.showScreen('menu');
         }, 2800);
       }, 2200);
@@ -526,6 +528,7 @@ export class Game {
               p.owner.kills += 1;
               p.owner.money = Math.min(MAX_MONEY, p.owner.money + KILL_REWARD);
               SFX.kill();
+              this.spawnExplosion(u.mesh.position.clone());
               this.ui.killFeed(p.owner, u, p.owner.vehicle.name);
               this.ui.toast(p.owner.isPlayer ? `Destroyed ${u.name}` : `${p.owner.name} wrecked ${u.name}`);
               this.checkElimination();

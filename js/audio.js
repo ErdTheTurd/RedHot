@@ -72,4 +72,20 @@ export const SFX = {
     setTimeout(() => tone(140, 0.25, 'sawtooth', 0.04, -40), 120);
   },
   ui() { tone(640, 0.04, 'triangle', 0.025); },
+  crateStart() {
+    tone(180, 0.15, 'sawtooth', 0.04);
+    let i = 0;
+    const tick = () => {
+      if (i++ > 18) return;
+      tone(400 + Math.random() * 200, 0.04, 'square', 0.02);
+      setTimeout(tick, 180);
+    };
+    tick();
+  },
+  crateLand(rarity) {
+    const bright = ['covert', 'extraordinary', 'classified'].includes(rarity);
+    tone(bright ? 660 : 320, 0.12, 'triangle', 0.06);
+    tone(bright ? 880 : 420, 0.2, 'triangle', 0.05);
+    if (bright) noise(0.2, 0.06);
+  },
 };

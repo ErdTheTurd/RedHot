@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { createInput } from './input.js';
 import { createUI } from './ui.js';
 import { Game } from './game.js';
+import { InventoryService } from './inventory.js';
 import { SFX } from './audio.js';
 
 const canvas = document.getElementById('game-canvas');
@@ -41,6 +42,7 @@ const ridge = new THREE.Mesh(
 ridge.position.y = -2;
 scene.add(ridge);
 
+const inventory = new InventoryService();
 const input = createInput();
 const gameRef = { game: null };
 const ui = createUI({
@@ -56,9 +58,9 @@ const ui = createUI({
   closeBuyMenu() { gameRef.game.closeBuyMenu(); },
   buyVehicle(id) { gameRef.game.buyVehicle(id); },
   buyGear(id) { gameRef.game.buyGear(id); },
-});
+}, inventory);
 
-const game = new Game({ scene, camera, input, ui });
+const game = new Game({ scene, camera, input, ui, inventory });
 gameRef.game = game;
 
 window.addEventListener('resize', () => {

@@ -1,14 +1,17 @@
 import * as THREE from 'three';
 import { VEHICLES } from './config.js';
 
-export function createVehicleMesh(def, teamColor) {
+export function createVehicleMesh(def, teamColor, skin = null) {
   const root = new THREE.Group();
   root.userData.vehicleId = def.id;
 
+  const bodyColor = skin?.color ?? def.color;
   const bodyMat = new THREE.MeshStandardMaterial({
-    color: def.color,
-    metalness: 0.55,
-    roughness: 0.45,
+    color: bodyColor,
+    metalness: skin?.metalness ?? 0.55,
+    roughness: skin?.roughness ?? 0.45,
+    emissive: skin?.emissive ?? 0x000000,
+    emissiveIntensity: skin?.emissive ? 0.35 : 0,
   });
   const accentMat = new THREE.MeshStandardMaterial({
     color: teamColor,
@@ -107,11 +110,12 @@ export function createVehicleMesh(def, teamColor) {
 }
 
 export class Unit {
-  constructor({ id, name, team, isPlayer, spawn, vehicleId }) {
+  constructor({ id, name, team, isPlayer, spawn, vehicleId, getSkin }) {
     this.id = id;
     this.name = name;
     this.team = team;
     this.isPlayer = !!isPlayer;
+    this.getSkin = getSkin || (() => null);
     this.alive = true;
     this.hp = 100;
     this.armor = 0;
@@ -139,7 +143,11 @@ export class Unit {
     this.lastAttacker = null;
 
     const def = VEHICLES[this.loadout[0]];
-    this.mesh = createVehicleMesh(def, team === 'raiders' ? 0xe85d04 : 0x1d9bf0);
+    this.mesh = createVehicleMesh(
+      def,
+      team === 'raiders' ? 0xe85d04 : 0x1d9bf0,
+      this.getSkin(def.id)
+    );
     this.mesh.position.set(spawn.x, spawn.y, spawn.z);
     this.mesh.rotation.y = this.yaw;
     this.mesh.userData.unitId = id;
@@ -178,7 +186,11 @@ export class Unit {
     const parent = this.mesh.parent;
     parent?.remove(this.mesh);
     const def = this.vehicle;
-    this.mesh = createVehicleMesh(def, this.team === 'raiders' ? 0xe85d04 : 0x1d9bf0);
+    this.mesh = createVehicleMesh(
+      def,
+      this.team === 'raiders' ? 0xe85d04 : 0x1d9bf0,
+      this.getSkin(def.id)
+    );
     this.mesh.position.copy(pos);
     this.mesh.rotation.y = yaw;
     this.mesh.userData.unitId = this.id;

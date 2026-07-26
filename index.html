@@ -3,11 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Vehicle Strike — 3D tactical combat with tanks, jets, ships, crates, keys, and skins." />
   <title>VEHICLE STRIKE — Tactical Warfare</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/main.css" />
+  <link rel="stylesheet" href="./css/main.css" />
   <script type="importmap">
   {
     "imports": {
@@ -26,15 +27,17 @@
       <div class="menu-atmosphere" aria-hidden="true"></div>
       <div class="menu-grain" aria-hidden="true"></div>
       <nav class="menu-top">
-        <span class="menu-top-label">ONLINE · MATCHMAKING READY</span>
-        <span class="menu-top-ver">BUILD 2.0.14</span>
+        <span class="menu-top-label">ONLINE · GITHUB PAGES BUILD</span>
+        <span class="menu-top-ver" id="menu-wallet">BANK $3,500</span>
       </nav>
       <div class="menu-hero">
         <p class="brand-mark">VEHICLE STRIKE</p>
         <h1 class="menu-headline">War is won by hull, wing, and keel.</h1>
-        <p class="menu-sub">Round-based tactical combat. Buy your fleet. Plant the warhead. Hold the coast.</p>
+        <p class="menu-sub">Fully playable 3D tactical combat. Earn bank credits, buy crates &amp; keys, unbox skins, equip your fleet.</p>
         <div class="menu-cta">
           <button class="btn btn-primary" id="btn-play">DEPLOY</button>
+          <button class="btn btn-ghost" id="btn-shop">ARMORY</button>
+          <button class="btn btn-ghost" id="btn-inventory">INVENTORY</button>
           <button class="btn btn-ghost" id="btn-howto">BRIEFING</button>
         </div>
       </div>
@@ -45,16 +48,17 @@
       </div>
     </section>
 
-    <!-- BRIEFING / HOW TO -->
+    <!-- BRIEFING -->
     <section id="screen-howto" class="screen">
-      <div class="panel-card">
+      <div class="panel-card wide">
         <h2>OPERATIONS BRIEFING</h2>
         <ul class="brief-list">
-          <li><strong>Objective</strong> — Raiders plant the warhead at A or B. Sentinels defuse or eliminate the opposing fleet.</li>
-          <li><strong>Economy</strong> — Earn credits each round. Win streaks, loss bonuses, and kills fund heavier vehicles.</li>
-          <li><strong>Buy phase</strong> — Press B to open the arsenal. Sidearms → mid-tier → capital craft, just like a gun buy menu.</li>
-          <li><strong>Controls</strong> — WASD move · Mouse aim · LMB fire · R reload · E plant/defuse · Tab scoreboard · 1–3 switch vehicle slot</li>
-          <li><strong>Classes</strong> — Tanks own land. Jets own sky. Ships own water. Cross domains carefully.</li>
+          <li><strong>Match</strong> — Raiders plant the warhead at A or B. Sentinels defuse or wipe the fleet. First to 5 rounds.</li>
+          <li><strong>In-round credits</strong> — Buy tanks, jets, and ships during the buy phase (press B).</li>
+          <li><strong>Bank</strong> — Match payouts go to your persistent bank (saved in this browser).</li>
+          <li><strong>Armory</strong> — Spend bank credits on crates and keys. Open crates for vehicle skins.</li>
+          <li><strong>Inventory</strong> — Equip skins onto vehicles. Sell duplicates back to the armory.</li>
+          <li><strong>Controls</strong> — WASD · Mouse · LMB fire · R reload · E plant/defuse · Tab score · 1–3 slots · G smoke · F EMP</li>
         </ul>
         <button class="btn btn-primary" id="btn-howto-back">RETURN</button>
       </div>
@@ -77,6 +81,79 @@
             <p>Hold the sites. Defuse or destroy.</p>
           </button>
         </div>
+        <button class="btn btn-ghost" id="btn-team-back" style="margin-top:1rem">BACK</button>
+      </div>
+    </section>
+
+    <!-- ARMORY / SHOP -->
+    <section id="screen-shop" class="screen">
+      <div class="meta-shell">
+        <header class="meta-header">
+          <div>
+            <p class="brand-mark brand-mark-sm">ARMORY</p>
+            <h2>CASES &amp; KEYS</h2>
+          </div>
+          <div class="buy-money">
+            <span>BANK</span>
+            <strong id="shop-wallet">$0</strong>
+          </div>
+          <button class="btn btn-ghost" id="btn-shop-back">BACK</button>
+        </header>
+        <div class="meta-tabs">
+          <button class="meta-tab active" data-shop-tab="cases">CASES</button>
+          <button class="meta-tab" data-shop-tab="keys">KEYS</button>
+        </div>
+        <div class="shop-grid" id="shop-grid"></div>
+      </div>
+    </section>
+
+    <!-- INVENTORY -->
+    <section id="screen-inventory" class="screen">
+      <div class="meta-shell">
+        <header class="meta-header">
+          <div>
+            <p class="brand-mark brand-mark-sm">LOCKER</p>
+            <h2>INVENTORY</h2>
+          </div>
+          <div class="buy-money">
+            <span>BANK</span>
+            <strong id="inv-wallet">$0</strong>
+          </div>
+          <button class="btn btn-ghost" id="btn-inv-back">BACK</button>
+        </header>
+        <div class="meta-tabs">
+          <button class="meta-tab active" data-inv-tab="skins">SKINS</button>
+          <button class="meta-tab" data-inv-tab="cases">CASES</button>
+          <button class="meta-tab" data-inv-tab="keys">KEYS</button>
+        </div>
+        <div class="inv-layout">
+          <div class="inv-grid" id="inv-grid"></div>
+          <aside class="inv-detail" id="inv-detail">
+            <p class="muted">Select an item</p>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <!-- CRATE OPENING -->
+    <section id="screen-crate" class="screen">
+      <div class="crate-stage">
+        <p class="brand-mark brand-mark-sm" id="crate-title">IRONFRONT CASE</p>
+        <div class="crate-reel-wrap">
+          <div class="crate-pointer"></div>
+          <div class="crate-reel" id="crate-reel"></div>
+        </div>
+        <div class="crate-result hidden" id="crate-result">
+          <span id="crate-rarity"></span>
+          <h3 id="crate-skin-name"></h3>
+          <div class="crate-swatch" id="crate-swatch"></div>
+          <div class="menu-cta" style="justify-content:center;margin-top:1.25rem">
+            <button class="btn btn-primary" id="btn-crate-equip">EQUIP</button>
+            <button class="btn btn-ghost" id="btn-crate-done">CONTINUE</button>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="btn-crate-open">UNLOCK WITH KEY</button>
+        <button class="btn btn-ghost" id="btn-crate-back">BACK</button>
       </div>
     </section>
 
@@ -105,7 +182,7 @@
       </div>
     </section>
 
-    <!-- IN-GAME HUD -->
+    <!-- HUD -->
     <section id="hud" class="hud hidden">
       <div class="hud-top">
         <div class="hud-round">
@@ -141,6 +218,7 @@
         <div class="hud-weapon">
           <span id="hud-vehicle-class">TANK</span>
           <strong id="hud-vehicle-name">SCOUT TRACKER</strong>
+          <em id="hud-skin-name">Factory New</em>
           <em id="hud-ammo">30 / 90</em>
         </div>
         <div class="hud-money">
@@ -174,16 +252,14 @@
       </div>
     </section>
 
-    <!-- ROUND OVERLAY -->
     <section id="round-banner" class="round-banner hidden">
       <p id="round-banner-sub"></p>
       <h2 id="round-banner-title"></h2>
     </section>
 
-    <!-- DAMAGE VIGNETTE -->
     <div id="damage-fx" class="damage-fx"></div>
   </div>
 
-  <script type="module" src="js/main.js"></script>
+  <script type="module" src="./js/main.js"></script>
 </body>
 </html>
