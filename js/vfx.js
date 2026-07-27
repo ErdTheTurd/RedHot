@@ -159,6 +159,36 @@ export function createTorpedoMesh() {
   return g;
 }
 
+/** Buried landmine — subtle disc, mostly revealed by detection rules */
+export function createLandmineMesh() {
+  const g = new THREE.Group();
+  const plate = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.55, 0.62, 0.12, 16),
+    new THREE.MeshStandardMaterial({
+      color: 0x2a2820,
+      metalness: 0.55,
+      roughness: 0.65,
+      emissive: 0x1a1008,
+      emissiveIntensity: 0.15,
+    })
+  );
+  g.add(plate);
+  const spike = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.12, 0.18, 8),
+    new THREE.MeshStandardMaterial({
+      color: 0x6a5040,
+      metalness: 0.4,
+      roughness: 0.5,
+      emissive: 0x401000,
+      emissiveIntensity: 0.35,
+    })
+  );
+  spike.position.y = 0.12;
+  g.add(spike);
+  g.visible = false;
+  return g;
+}
+
 export function spawnMuzzleFlash(scene, position, direction, heavy = false) {
   const tex = getMuzzleTex();
   const mat = new THREE.SpriteMaterial({

@@ -2,6 +2,7 @@ import {
   CATEGORIES, VEHICLES, GEAR, formatMoney, formatTime, TEAMS,
 } from './config.js';
 import { CASES, KEYS, SKINS, RARITY, rarityColor, shopSkinCatalog } from './skins.js';
+import { GEAR_ITEMS, gearItemImageDataUrl } from './gearItems.js';
 import { skinImageDataUrl, vehicleImageDataUrl } from './skinArt.js';
 import { SFX } from './audio.js';
 import {
@@ -38,6 +39,8 @@ export function createUI(game, inventory) {
   let selectedInv = null;
   let crateFocus = null;
   let lastOpenedVehicle = null;
+  let lastOpenedItem = null;
+  let lastOpenKind = 'vehicle';
   let reelSpinning = false;
   let opsMap = inventory.profile?.selectedMap || 'ironfront';
   let opsMode = inventory.profile?.selectedMode || 'strike';
@@ -520,7 +523,85 @@ export function createUI(game, inventory) {
         };
         grid.appendChild(el);
       }
-      detail.innerHTML = '<p class="muted">Click a case to unlock a fleet craft with a key</p>';
+      detail.innerHTML = '<p class="muted">Click a case to unlock fleet craft, warheads, or accessories with a matching key</p>';
+    } else if (invTab === 'warheads') {
+      const owned = inventory.ownedConsumables();
+      const loadout = inventory.data.loadoutConsumables || [];
+      for (const row of owned) {
+        const item = row.item;
+        const equipped = loadout.includes(item.id);
+        const el = document.createElement('button');
+        el.className = `inv-item${selectedInv === item.id ? ' selected' : ''}${equipped ? ' equipped' : ''}`;
+        el.style.setProperty('--rarity', rarityColor(item.rarity));
+        el.innerHTML = `
+          <img class="inv-swatch" src="${gearItemImageDataUrl(item)}" alt="${item.name}" width="256" height="256" loading="lazy" />
+          <strong>${item.name}</strong>
+          <span>${item.desc}</span>
+          <em>x${row.count}${equipped ? ' · MATCH LOADOUT' : ''}</em>
+        `;
+        el.onclick = () => {
+          selectedInv = item.id;
+          renderInventory();
+        };
+        grid.appendChild(el);
+      }
+      if (!owned.length) {
+        grid.innerHTML = '<p class="muted" style="padding:1rem">Open Warheads Cases for ammo, bombs, torpedoes, and landmines. Equip up to 4 for your next match.</p>';
+      }
+      if (selectedInv && GEAR_ITEMS[selectedInv]?.type === 'consumable') {
+        const item = GEAR_ITEMS[selectedInv];
+        const equipped = loadout.includes(item.id);
+        detail.innerHTML = `
+          <span style="color:${rarityColor(item.rarity)}">${RARITY[item.rarity]?.label || ''}</span>
+          <h3>${item.name}</h3>
+          <img class="inv-swatch-lg" src="${gearItemImageDataUrl(item)}" alt="${item.name}" width="256" height="256" />
+          <p class="muted">${item.desc}</p>
+          <div class="stat-row"><span>Owned</span><strong>x${inventory.itemCount(item.id)}</strong></div>
+          <div class="stat-row"><span>Loadout</span><strong>${loadout.length}/4</strong></div>
+          <button class="btn btn-primary" style="width:100%;margin-top:1rem" id="btn-equip-warhead">${equipped ? 'REMOVE FROM MATCH' : 'EQUIP FOR MATCH'}</button>
+        `;
+        $('btn-equip-warhead').onclick = () => {
+          inventory.toggleLoadoutConsumable(item.id);
+          SFX.buy();
+          toast(equipped ? `Removed ${item.shortName}` : `Equipped ${item.shortName} for next match`);
+          renderInventory();
+        };
+      } else {
+        detail.innerHTML = '<p class="muted">Equip up to 4 warheads. They are consumed when a match starts.</p>';
+      }
+    } else if (invTab === 'accessories') {
+      const owned = inventory.ownedAccessories();
+      for (const item of owned) {
+        const el = document.createElement('button');
+        el.className = `inv-item${selectedInv === item.id ? ' selected' : ''} equipped`;
+        el.style.setProperty('--rarity', rarityColor(item.rarity));
+        el.innerHTML = `
+          <img class="inv-swatch" src="${gearItemImageDataUrl(item)}" alt="${item.name}" width="256" height="256" loading="lazy" />
+          <strong>${item.name}</strong>
+          <span>${item.desc}</span>
+          <em>PERMANENT</em>
+        `;
+        el.onclick = () => {
+          selectedInv = item.id;
+          renderInventory();
+        };
+        grid.appendChild(el);
+      }
+      if (!owned.length) {
+        grid.innerHTML = '<p class="muted" style="padding:1rem">Open Accessories Cases for permanent mods: mine detector, engines, plating, scopes, and more.</p>';
+      }
+      if (selectedInv && GEAR_ITEMS[selectedInv]?.type === 'accessory') {
+        const item = GEAR_ITEMS[selectedInv];
+        detail.innerHTML = `
+          <span style="color:${rarityColor(item.rarity)}">${RARITY[item.rarity]?.label || ''}</span>
+          <h3>${item.name}</h3>
+          <img class="inv-swatch-lg" src="${gearItemImageDataUrl(item)}" alt="${item.name}" width="256" height="256" />
+          <p class="muted">${item.desc}</p>
+          <div class="stat-row"><span>Status</span><strong>ALWAYS ON</strong></div>
+        `;
+      } else {
+        detail.innerHTML = '<p class="muted">Accessories unlock permanently and apply automatically in every match.</p>';
+      }
     } else {
       for (const k of Object.values(KEYS)) {
         const n = inventory.keyCount(k.id);
@@ -535,13 +616,15 @@ export function createUI(game, inventory) {
         el.onclick = () => toast(`Owned: ${n}`);
         grid.appendChild(el);
       }
-      detail.innerHTML = '<p class="muted">Keys open matching fleet cases</p>';
+      detail.innerHTML = '<p class="muted">Keys open matching cases</p>';
     }
   }
 
   function openCrateScreen(caseId) {
     crateFocus = caseId;
     lastOpenedVehicle = null;
+    lastOpenedItem = null;
+    lastOpenKind = CASES[caseId]?.kind || 'vehicle';
     reelSpinning = false;
     const c = CASES[caseId];
     const key = KEYS[c.keyId];
@@ -559,8 +642,24 @@ export function createUI(game, inventory) {
     $('btn-crate-open').textContent = inventory.canOpen(caseId)
       ? 'UNLOCK WITH KEY'
       : 'NEED CASE + KEY';
+    const equipBtn = $('btn-crate-equip');
+    if (equipBtn) {
+      if (c.kind === 'item') {
+        equipBtn.textContent = c.id === 'accessories_case' ? 'VIEW ACCESSORIES' : 'ADD TO MATCH LOADOUT';
+      } else {
+        equipBtn.textContent = 'EQUIP TO FLEET';
+      }
+    }
     buildReelPreview(caseId);
     showScreen('crate');
+  }
+
+  function reelThumb(entry, caseId) {
+    const c = CASES[caseId];
+    if (c?.kind === 'item') {
+      return gearItemImageDataUrl(entry);
+    }
+    return vehicleImg(entry, inventory);
   }
 
   function buildReelPreview(caseId) {
@@ -575,7 +674,7 @@ export function createUI(game, inventory) {
       cell.className = 'reel-cell';
       cell.style.borderBottom = `3px solid ${rarityColor(v.rarity || 'milspec')}`;
       cell.innerHTML = `
-        <img src="${vehicleImg(v, inventory)}" alt="${v.name}" />
+        <img src="${reelThumb(v, caseId)}" alt="${v.name}" />
         <span>${v.name}</span>
       `;
       reel.appendChild(cell);
@@ -597,11 +696,20 @@ export function createUI(game, inventory) {
     }
     const res = inventory.openCase(crateFocus);
     if (!res.ok) { toast(res.reason); return; }
-    lastOpenedVehicle = res.vehicle;
-    animateCrateReveal(res.vehicle, res.duplicate);
+    if (res.kind === 'item') {
+      lastOpenedItem = res.item;
+      lastOpenedVehicle = null;
+      lastOpenKind = 'item';
+      animateCrateReveal(res.item, res.duplicate, 'item');
+    } else {
+      lastOpenedVehicle = res.vehicle;
+      lastOpenedItem = null;
+      lastOpenKind = 'vehicle';
+      animateCrateReveal(res.vehicle, res.duplicate, 'vehicle');
+    }
   };
 
-  function animateCrateReveal(vehicle, duplicate = false) {
+  function animateCrateReveal(prize, duplicate = false, kind = 'vehicle') {
     reelSpinning = true;
     $('btn-crate-open').classList.add('hidden');
     $('crate-result').classList.add('hidden');
@@ -615,13 +723,13 @@ export function createUI(game, inventory) {
       cells.push(pool[Math.floor(Math.random() * pool.length)]);
     }
     const winIndex = 42;
-    cells[winIndex] = vehicle;
+    cells[winIndex] = prize;
     cells.forEach((v) => {
       const cell = document.createElement('div');
       cell.className = 'reel-cell';
       cell.style.borderBottom = `3px solid ${rarityColor(v.rarity || 'milspec')}`;
       cell.innerHTML = `
-        <img src="${vehicleImg(v, inventory)}" alt="${v.name}" />
+        <img src="${reelThumb(v, crateFocus)}" alt="${v.name}" />
         <span>${v.name}</span>
       `;
       reel.appendChild(cell);
@@ -635,23 +743,55 @@ export function createUI(game, inventory) {
     });
 
     setTimeout(() => {
-      SFX.crateLand(vehicle.rarity || 'milspec');
-      $('crate-rarity').textContent = (RARITY[vehicle.rarity || 'milspec']?.label || '')
-        + (duplicate ? ' · DUPLICATE' : ' · NEW FLEET CRAFT');
-      $('crate-rarity').style.color = rarityColor(vehicle.rarity || 'milspec');
-      $('crate-skin-name').textContent = vehicle.name;
+      SFX.crateLand(prize.rarity || 'milspec');
+      let badge = RARITY[prize.rarity || 'milspec']?.label || '';
+      if (kind === 'item') {
+        if (prize.type === 'accessory') {
+          badge += duplicate ? ' · DUPLICATE MOD' : ' · NEW ACCESSORY';
+        } else {
+          badge += ' · WARHEAD';
+        }
+      } else {
+        badge += duplicate ? ' · DUPLICATE' : ' · NEW FLEET CRAFT';
+      }
+      $('crate-rarity').textContent = badge;
+      $('crate-rarity').style.color = rarityColor(prize.rarity || 'milspec');
+      $('crate-skin-name').textContent = prize.name;
       const sw = $('crate-swatch');
       sw.style.background = 'transparent';
-      sw.style.boxShadow = `0 0 40px ${rarityColor(vehicle.rarity || 'milspec')}`;
-      sw.innerHTML = `<img src="${vehicleImg(vehicle, inventory)}" alt="${vehicle.name}" style="width:100%;height:100%;object-fit:cover" />`;
+      sw.style.boxShadow = `0 0 40px ${rarityColor(prize.rarity || 'milspec')}`;
+      const imgSrc = kind === 'item' ? gearItemImageDataUrl(prize) : vehicleImg(prize, inventory);
+      sw.innerHTML = `<img src="${imgSrc}" alt="${prize.name}" style="width:100%;height:100%;object-fit:cover" />`;
       $('crate-result').classList.remove('hidden');
       reelSpinning = false;
       refreshMeta();
-      if (duplicate) toast('Duplicate — already in your fleet');
+      if (kind === 'item' && prize.type === 'accessory' && duplicate) {
+        toast('Already owned — accessory stays unlocked');
+      } else if (kind === 'vehicle' && duplicate) {
+        toast('Duplicate — already in your fleet');
+      }
     }, 4300);
   }
 
   $('btn-crate-equip').onclick = () => {
+    if (lastOpenKind === 'item' && lastOpenedItem) {
+      if (lastOpenedItem.type === 'consumable') {
+        const res = inventory.toggleLoadoutConsumable(lastOpenedItem.id);
+        if (res.loadout?.includes(lastOpenedItem.id)) {
+          SFX.buy();
+          toast(`Added ${lastOpenedItem.shortName} to match loadout`);
+        } else {
+          toast('Removed from loadout or loadout full (max 4)');
+        }
+      } else {
+        invTab = 'accessories';
+        selectedInv = lastOpenedItem.id;
+        SFX.ui();
+        renderInventory();
+        showScreen('inventory');
+      }
+      return;
+    }
     if (!lastOpenedVehicle) return;
     inventory.equipFleet(lastOpenedVehicle.id);
     SFX.buy();
@@ -660,8 +800,13 @@ export function createUI(game, inventory) {
 
   $('btn-crate-done').onclick = () => {
     SFX.ui();
-    invTab = 'vehicles';
-    selectedInv = lastOpenedVehicle?.id || null;
+    if (lastOpenKind === 'item') {
+      invTab = lastOpenedItem?.type === 'accessory' ? 'accessories' : 'warheads';
+      selectedInv = lastOpenedItem?.id || null;
+    } else {
+      invTab = 'vehicles';
+      selectedInv = lastOpenedVehicle?.id || null;
+    }
     renderInventory();
     showScreen('inventory');
   };
@@ -915,16 +1060,12 @@ export function createUI(game, inventory) {
     $('hud-ammo').textContent = p.reloadT > 0 ? 'RELOADING…' : `${ammo.mag} / ${ammo.reserve}`;
     const ord = $('hud-ordnance');
     if (ord) {
-      if (v.domain === 'air') {
-        ord.textContent = `BOMBS ${p.bombs || 0}`;
-        ord.style.display = '';
-      } else if (v.domain === 'sea') {
-        ord.textContent = `TORPEDOES ${p.torpedoes || 0}`;
-        ord.style.display = '';
-      } else {
-        ord.textContent = '';
-        ord.style.display = 'none';
-      }
+      const bits = [];
+      if (v.domain === 'air') bits.push(`BOMBS ${p.bombs || 0}`);
+      if (v.domain === 'sea') bits.push(`TORPEDOES ${p.torpedoes || 0}`);
+      if ((p.landmines || 0) > 0 || v.domain === 'land') bits.push(`MINES ${p.landmines || 0}`);
+      ord.textContent = bits.join(' · ');
+      ord.style.display = bits.length ? '' : 'none';
     }
 
     const hint = $('hud-hint');
@@ -933,16 +1074,16 @@ export function createUI(game, inventory) {
         hint.textContent = `CMD ${game.input.cmdBuffer || '/'}  ·  Enter run · Esc cancel`;
         hint.style.color = '#ffe08a';
       } else if (game.mode?.freeRoam) {
-        hint.textContent = 'Vigilante · F Gun · B Bombs · C Arsenal · T Torpedo · Esc Extract';
+        hint.textContent = 'Vigilante · F Gun · B Bombs · X Mine · C Arsenal · T Torpedo · Esc Extract';
         hint.style.color = '';
       } else if (v.domain === 'air') {
         hint.textContent = 'F Gun · B Bombs · R Reload · Space Jump · 1–3 Slots · G Smoke · V EMP';
         hint.style.color = '';
       } else if (v.domain === 'sea') {
-        hint.textContent = 'F Gun · T Torpedo · R Reload · Space Jump · 1–3 Slots · G Smoke · V EMP';
+        hint.textContent = 'F Gun · T Torpedo · X Mine · R Reload · Space Jump · 1–3 Slots';
         hint.style.color = '';
       } else {
-        hint.textContent = 'WASD · F Gun · B Buy · R Reload · E Plant · G Smoke · V EMP · /give-tokens';
+        hint.textContent = 'WASD · F Gun · B Buy · X Mine · R Reload · E Plant · /give-tokens';
         hint.style.color = '';
       }
     }
