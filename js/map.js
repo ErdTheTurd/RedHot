@@ -9,6 +9,25 @@ import {
 
 const MAP_SIZE = 120;
 
+/** East–west river through the mainland + north fork. Ships use this + ocean. */
+export function inRiver(x, z) {
+  const centerZ = 4 + Math.sin(x * 0.08) * 1.4;
+  if (x > -42 && x < 34 && Math.abs(z - centerZ) < 3.5) return true;
+  // North fork toward site-A waters
+  if (x > -34 && x < -24 && z > 4 && z < 19) return true;
+  // East mouth flare into ocean
+  if (x > 28 && x < 38 && z > 0 && z < 11) return true;
+  // West mouth flare
+  if (x > -46 && x < -38 && z > 0 && z < 10) return true;
+  return false;
+}
+
+/** Land bridges over the river — tanks can cross, ships still treat as water. */
+export function onRiverBridge(x, z) {
+  return (Math.abs(x + 6) < 2.9 && Math.abs(z - 4) < 5.2)
+    || (Math.abs(x - 12) < 2.9 && Math.abs(z - 3.5) < 5.2);
+}
+
 function std(opts) {
   return new THREE.MeshStandardMaterial({
     color: opts.color ?? 0xffffff,
@@ -106,6 +125,9 @@ export function createMap(scene) {
   const land = shadow(new THREE.Mesh(new THREE.BoxGeometry(70, 1.2, 55), landMat));
   land.position.set(-5, 0.4, -8);
   group.add(land);
+
+  // Navigable river cutting the island (ships: ocean + river only)
+  buildRiver(group, { waterMat, sandMat, concreteMat, metalMat });
 
   // Beveled cliff faces
   const cliffMat = std({ color: 0x4a5344, roughness: 0.9, metalness: 0.08, flat: true, envMapIntensity: 0.25 });
@@ -325,7 +347,10 @@ export function createMap(scene) {
       center: new THREE.Vector3(x, y, z),
       half: new THREE.Vector3(w / 2, h / 2, d / 2),
     })),
-    isWater(x, z) {
+    isWater(x, z, domain = 'sea') {
+      // Land craft can drive over river bridges
+      if (domain === 'land' && onRiverBridge(x, z)) return false;
+      if (inRiver(x, z)) return true;
       const onLand =
         (x > -40 && x < 30 && z > -35.5 && z < 19.5) ||
         (Math.hypot(x + 28, z - 22) < 11) ||
@@ -335,6 +360,8 @@ export function createMap(scene) {
       return !onLand;
     },
     groundHeight(x, z) {
+      if (onRiverBridge(x, z)) return 1.35;
+      if (inRiver(x, z)) return 0.2;
       if (Math.hypot(x + 28, z - 22) < 11) return 0.85;
       if (Math.hypot(x - 30, z - 18) < 10) return 0.85;
       if (x > -22 && x < -14 && z > -1 && z < 17) return 0.4;
@@ -346,6 +373,13 @@ export function createMap(scene) {
     nearestWater(x, z) {
       if (this.isWater(x, z)) return { x, z };
       const candidates = [
+        // River midpoints (prefer inland water for land spawns)
+        { x: -30, z: 4 },
+        { x: -10, z: 4.5 },
+        { x: 5, z: 3.5 },
+        { x: 20, z: 4 },
+        { x: -28, z: 12 },
+        // Ocean
         { x: -42, z: 0 },
         { x: 36, z: -8 },
         { x: -28, z: 34 },
@@ -357,10 +391,9 @@ export function createMap(scene) {
         { x: 18, z: 22 },
         { x: -18, z: 24 },
       ];
-      // Also sample a ring around the player
       for (let a = 0; a < 16; a++) {
         const ang = (a / 16) * Math.PI * 2;
-        for (const r of [8, 14, 22, 30]) {
+        for (const r of [6, 12, 18, 26]) {
           candidates.push({ x: x + Math.cos(ang) * r, z: z + Math.sin(ang) * r });
         }
       }
@@ -374,7 +407,7 @@ export function createMap(scene) {
           best = c;
         }
       }
-      return best || { x: -42, z: 8 };
+      return best || { x: -10, z: 4 };
     },
     update(t) {
       if (this.water?.material?.map) {
@@ -397,6 +430,49 @@ export function createMap(scene) {
       }
     },
   };
+}
+
+function buildRiver(group, mats) {
+  const { waterMat, sandMat, concreteMat, metalMat } = mats;
+  const riverMat = waterMat.clone();
+  riverMat.opacity = 0.97;
+  riverMat.transparent = true;
+
+  // Main channel segments (follow the sin centerline)
+  for (let x = -42; x < 34; x += 4) {
+    const cz = 4 + Math.sin(x * 0.08) * 1.4;
+    const seg = shadow(new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.55, 7.2), riverMat));
+    seg.position.set(x + 2, 0.55, cz);
+    group.add(seg);
+    // Sandy banks
+    for (const side of [-1, 1]) {
+      const bank = shadow(new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.35, 1.1), sandMat));
+      bank.position.set(x + 2, 0.95, cz + side * 4.0);
+      group.add(bank);
+    }
+  }
+
+  // North fork
+  const fork = shadow(new THREE.Mesh(new THREE.BoxGeometry(8, 0.55, 14), riverMat));
+  fork.position.set(-29, 0.55, 11);
+  group.add(fork);
+  for (const [bx, bz] of [[-33.5, 11], [-24.5, 11], [-29, 17.5]]) {
+    const bank = shadow(new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.35, 4), sandMat));
+    bank.position.set(bx, 0.95, bz);
+    group.add(bank);
+  }
+
+  // Land bridges so tanks can still cross
+  for (const [x, z] of [[-6, 4], [12, 3.5]]) {
+    const bridge = shadow(new THREE.Mesh(new THREE.BoxGeometry(5.5, 0.35, 10), concreteMat));
+    bridge.position.set(x, 1.15, z);
+    group.add(bridge);
+    for (const sx of [-2.5, 2.5]) {
+      const rail = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.45, 9.5), metalMat));
+      rail.position.set(x + sx, 1.45, z);
+      group.add(rail);
+    }
+  }
 }
 
 function buildBuilding(group, cfg) {
