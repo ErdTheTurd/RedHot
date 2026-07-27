@@ -61,6 +61,10 @@ export function loadInventory() {
         if (base.skins[sid]) equipped[vid] = sid;
       }
     }
+    const profile = { ...base.profile, ...(data.profile || {}) };
+    const stats = { ...base.stats, ...(data.stats || {}) };
+    // Sync unlocks from XP / wins for older saves
+    const synced = awardXp({ ...profile, stats }, 0);
     return {
       ...base,
       ...data,
@@ -68,8 +72,8 @@ export function loadInventory() {
       keys: { ...base.keys, ...(data.keys || {}) },
       skins,
       equipped,
-      stats: { ...base.stats, ...(data.stats || {}) },
-      profile: { ...base.profile, ...(data.profile || {}) },
+      stats,
+      profile: synced,
     };
   } catch {
     return blank();
