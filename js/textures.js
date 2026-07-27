@@ -1,6 +1,36 @@
 import * as THREE from 'three';
 
-/** Canvas-based textures for richer in-game materials */
+/** Procedural PBR helper maps for military vehicles */
+export function makePanelNormalMap(size = 256) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#8080ff';
+  ctx.fillRect(0, 0, size, size);
+  ctx.strokeStyle = 'rgba(40,40,120,0.55)';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < size; i += 32) {
+    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, size); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(size, i); ctx.stroke();
+  }
+  // rivets
+  for (let y = 16; y < size; y += 32) {
+    for (let x = 16; x < size; x += 32) {
+      const g = ctx.createRadialGradient(x, y, 0, x, y, 4);
+      g.addColorStop(0, '#c0c0ff');
+      g.addColorStop(1, '#6060cc');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(3, 3);
+  return tex;
+}
+
 export function makeNoiseTexture(size = 256, opts = {}) {
   const {
     base = [40, 55, 45],
@@ -60,30 +90,68 @@ export function makeWaterTexture() {
 }
 
 export function makeSkyDome() {
-  const geo = new THREE.SphereGeometry(180, 32, 16);
+  const geo = new THREE.SphereGeometry(180, 48, 24);
   const c = document.createElement('canvas');
-  c.width = 512;
-  c.height = 256;
+  c.width = 1024;
+  c.height = 512;
   const ctx = c.getContext('2d');
-  const g = ctx.createLinearGradient(0, 0, 0, 256);
-  g.addColorStop(0, '#6eb0d4');
-  g.addColorStop(0.45, '#9ec8e0');
-  g.addColorStop(0.7, '#c5d8e4');
-  g.addColorStop(0.85, '#d4c4a8');
-  g.addColorStop(1, '#8a9a7a');
+  const g = ctx.createLinearGradient(0, 0, 0, 512);
+  g.addColorStop(0, '#4a7aa0');
+  g.addColorStop(0.35, '#7eb0d0');
+  g.addColorStop(0.55, '#b8d4e8');
+  g.addColorStop(0.72, '#d8c8a8');
+  g.addColorStop(0.88, '#9aaa7a');
+  g.addColorStop(1, '#5a6a50');
   ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 512, 256);
-  // soft sun
-  const sun = ctx.createRadialGradient(380, 80, 4, 380, 80, 60);
-  sun.addColorStop(0, 'rgba(255,244,200,0.95)');
-  sun.addColorStop(0.4, 'rgba(255,210,140,0.35)');
+  ctx.fillRect(0, 0, 1024, 512);
+  // clouds
+  ctx.globalAlpha = 0.25;
+  for (let i = 0; i < 40; i++) {
+    const x = Math.random() * 1024;
+    const y = 80 + Math.random() * 180;
+    const r = 40 + Math.random() * 90;
+    const cg = ctx.createRadialGradient(x, y, 0, x, y, r);
+    cg.addColorStop(0, 'rgba(255,255,255,0.9)');
+    cg.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = cg;
+    ctx.beginPath();
+    ctx.ellipse(x, y, r, r * 0.45, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  const sun = ctx.createRadialGradient(780, 120, 4, 780, 120, 90);
+  sun.addColorStop(0, 'rgba(255,244,200,1)');
+  sun.addColorStop(0.25, 'rgba(255,210,140,0.55)');
   sun.addColorStop(1, 'rgba(255,200,120,0)');
   ctx.fillStyle = sun;
-  ctx.fillRect(0, 0, 512, 256);
+  ctx.fillRect(0, 0, 1024, 512);
 
   const tex = new THREE.CanvasTexture(c);
   const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, fog: false });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.name = 'skydome';
-  return mesh;
+  return new THREE.Mesh(geo, mat);
+}
+
+export function makeMuzzleFlashTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(64, 64, 2, 64, 64, 60);
+  g.addColorStop(0, 'rgba(255,255,220,1)');
+  g.addColorStop(0.2, 'rgba(255,200,80,0.9)');
+  g.addColorStop(0.5, 'rgba(255,100,20,0.45)');
+  g.addColorStop(1, 'rgba(255,40,0,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 128, 128);
+  // star spikes
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    ctx.strokeStyle = 'rgba(255,230,160,0.7)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(64, 64);
+    ctx.lineTo(64 + Math.cos(a) * 58, 64 + Math.sin(a) * 58);
+    ctx.stroke();
+  }
+  return new THREE.CanvasTexture(c);
 }
