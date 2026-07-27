@@ -508,6 +508,28 @@ export class Game {
     SFX.ui();
   }
 
+  spawnExplosion(pos) {
+    const group = new THREE.Group();
+    group.position.copy(pos);
+    group.position.y += 1;
+    for (let i = 0; i < 14; i++) {
+      const m = new THREE.Mesh(
+        new THREE.SphereGeometry(0.2 + Math.random() * 0.25, 6, 6),
+        new THREE.MeshBasicMaterial({ color: i % 2 ? 0xff6a1a : 0xffd166 })
+      );
+      m.position.set((Math.random() - 0.5) * 2, Math.random() * 2, (Math.random() - 0.5) * 2);
+      m.userData.vel = new THREE.Vector3(
+        (Math.random() - 0.5) * 8,
+        4 + Math.random() * 6,
+        (Math.random() - 0.5) * 8
+      );
+      group.add(m);
+    }
+    group.userData.life = 0.7;
+    this.scene.add(group);
+    this.effects.push(group);
+  }
+
   updateProjectiles(dt) {
     const remain = [];
     for (const p of this.projectiles) {
