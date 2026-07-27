@@ -50,13 +50,8 @@ function blank() {
 
 function migrateLegacy(data) {
   const base = blank();
-  const owned = { ...base.ownedVehicles, ...(data.ownedVehicles || {}) };
-  // Old saves may only have skins — grant mid-tier fleet so they aren't stuck
-  if (!data.ownedVehicles) {
-    for (const id of ['apc_crusher', 'patrol_cutter', 'falcon_interceptor']) {
-      owned[id] = true;
-    }
-  }
+  // Only keep craft the player actually unlocked — no free mid-tier handouts
+  const owned = { ...(data.ownedVehicles || {}) };
   for (const id of starterVehicleIds()) owned[id] = true;
 
   const equippedFleet = { ...base.equippedFleet, ...(data.equippedFleet || {}) };
@@ -124,7 +119,8 @@ export class InventoryService {
   }
 
   ownsVehicle(id) {
-    return !!this.data.ownedVehicles[id] || !!VEHICLES[id]?.starter;
+    // Strict: must be in the unlocked fleet map (starters are seeded there on new saves)
+    return !!this.data.ownedVehicles?.[id];
   }
 
   unlockVehicle(id) {
@@ -158,10 +154,21 @@ export class InventoryService {
   }
 
   matchLoadout() {
+    // Always seed starters so a fresh profile can still deploy
+    for (const id of starterVehicleIds()) {
+      if (!this.data.ownedVehicles[id]) this.data.ownedVehicles[id] = true;
+    }
+    const pick = (domain, fallback) => {
+      const eq = this.data.equippedFleet?.[domain];
+      if (eq && this.ownsVehicle(eq)) return eq;
+      if (this.ownsVehicle(fallback)) return fallback;
+      const any = this.ownedVehicleList().find((v) => v.domain === domain);
+      return any?.id || null;
+    };
     return [
-      this.getEquippedFleet('land')?.id || 'scout_tracker',
-      this.getEquippedFleet('sea')?.id || 'coastal_skiff',
-      this.getEquippedFleet('air')?.id || 'wasp_drone',
+      pick('land', 'scout_tracker'),
+      pick('sea', 'coastal_skiff'),
+      pick('air', 'wasp_drone'),
     ];
   }
 

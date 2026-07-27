@@ -707,19 +707,25 @@ export function createUI(game, inventory) {
       return;
     }
 
-    const list = Object.values(VEHICLES).filter((v) => v.category === buyCat);
+    // Arsenal: only craft unlocked from crates (plus the 3 starter hulls)
+    const list = Object.values(VEHICLES).filter(
+      (v) => v.category === buyCat && inventory.ownsVehicle(v.id)
+    );
+    if (!list.length) {
+      root.innerHTML = `<p class="muted" style="padding:1rem">No unlocked craft in this class.<br/>Open fleet cases in Inventory to unlock tanks, ships, and jets.</p>`;
+      return;
+    }
     for (const v of list) {
-      const unlocked = inventory.ownsVehicle(v.id);
       const owned = player.loadout.includes(v.id);
-      const cant = (!unlocked) || (player.money < v.price && !owned);
+      const cant = player.money < v.price && !owned;
       const skin = inventory.getEquipped(v.id);
       const btn = document.createElement('button');
-      btn.className = `buy-item buy-item-skin${cant ? ' cant' : ''}${owned ? ' owned' : ''}${selectedId === v.id ? ' selected' : ''}${unlocked ? '' : ' locked'}`;
+      btn.className = `buy-item buy-item-skin${cant ? ' cant' : ''}${owned ? ' owned' : ''}${selectedId === v.id ? ' selected' : ''}`;
       btn.innerHTML = `
         <img class="buy-thumb" src="${vehicleImg(v, inventory)}" alt="" width="64" height="64" />
         <div class="name">${v.name}</div>
-        <div class="meta">${v.className} · ${unlocked ? (skin?.shortName || 'Stock') : 'LOCKED — open crates'}</div>
-        <div class="price">${unlocked ? formatMoney(v.price) : 'FLEET LOCK'}</div>`;
+        <div class="meta">${v.className} · ${skin?.shortName || 'Stock'}</div>
+        <div class="price">${formatMoney(v.price)}</div>`;
       btn.onclick = () => { selectedId = v.id; renderBuy(); };
       btn.ondblclick = () => tryBuyVehicle(v.id);
       root.appendChild(btn);
@@ -730,7 +736,7 @@ export function createUI(game, inventory) {
     const v = VEHICLES[id];
     if (!v) return;
     if (!inventory.ownsVehicle(id)) {
-      toast('Unlock this craft from a fleet case first');
+      toast('Only craft unlocked from crates can be used');
       return;
     }
     const p = game.player;
@@ -796,19 +802,27 @@ export function createUI(game, inventory) {
     }
     const skin = inventory.getEquipped(v.id);
     const unlocked = inventory.ownsVehicle(v.id);
+    if (!unlocked) {
+      root.innerHTML = `
+        <span class="muted">${v.className}</span>
+        <h3>${v.name}</h3>
+        <p class="muted">Locked. Open fleet cases to unlock this craft — you can only deploy vehicles you own.</p>
+      `;
+      return;
+    }
     root.innerHTML = `
       <span class="muted">${v.className}</span>
       <h3>${v.name}</h3>
       <img class="inv-swatch-lg" src="${vehicleImg(v, inventory)}" alt="${v.name}" width="256" height="256" style="margin:0.5rem 0" />
       <p class="muted">${v.desc}</p>
-      <div class="stat-row"><span>Fleet</span><strong>${unlocked ? 'UNLOCKED' : 'LOCKED — open crates'}</strong></div>
+      <div class="stat-row"><span>Fleet</span><strong>UNLOCKED</strong></div>
       <div class="stat-row"><span>Paint</span><strong style="color:${rarityColor(skin.rarity)}">${skin.shortName}</strong></div>
       <div class="stat-row"><span>Damage</span><strong>${v.damage}</strong></div>
       <div class="stat-row"><span>Fire rate</span><strong>${v.fireRate}/s</strong></div>
       <div class="stat-row"><span>Speed</span><strong>${v.speed}</strong></div>
       <div class="stat-row"><span>Domain</span><strong>${v.domain.toUpperCase()}</strong></div>
-      <div class="stat-row"><span>Price</span><strong>${formatMoney(v.price)}</strong></div>
-      <button class="btn btn-primary" style="margin-top:1rem;width:100%" id="btn-buy-confirm">${unlocked ? 'PURCHASE' : 'LOCKED'}</button>
+      <div class="stat-row"><span>Deploy</span><strong>${formatMoney(v.price)}</strong></div>
+      <button class="btn btn-primary" style="margin-top:1rem;width:100%" id="btn-buy-confirm">DEPLOY</button>
     `;
     $('btn-buy-confirm').onclick = () => tryBuyVehicle(selectedId);
   }
