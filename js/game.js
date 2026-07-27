@@ -8,6 +8,9 @@ import { Unit } from './units.js';
 import { createMap, getSpawns } from './map.js';
 import { updateBot } from './bots.js';
 import { SFX } from './audio.js';
+import {
+  createProjectileMesh, orientProjectile, spawnMuzzleFlash, spawnImpact, updateVfxList,
+} from './vfx.js';
 
 export class Game {
   constructor({ scene, camera, input, ui, inventory }) {
@@ -358,8 +361,13 @@ export class Game {
     unit.fireCooldown = 1 / def.fireRate;
     unit.recoil = Math.min(0.2, unit.recoil + def.recoil);
 
+    const heavy = def.category === 'heavy';
     const origin = unit.mesh.position.clone();
-    origin.y += def.domain === 'air' ? 0.5 : 1.2;
+    origin.y += def.domain === 'air' ? 0.6 : 1.45;
+    // Offset muzzle forward along facing
+    origin.x += Math.sin(unit.yaw) * (def.domain === 'air' ? 2.2 : 3.2);
+    origin.z += Math.cos(unit.yaw) * (def.domain === 'air' ? 2.2 : 3.2);
+
     const spread = def.spread + unit.recoil;
     const yaw = unit.yaw + (Math.random() - 0.5) * spread * 2;
     const pitch = (unit.isPlayer ? -unit.pitch : 0) + (Math.random() - 0.5) * spread;
@@ -369,27 +377,28 @@ export class Game {
       Math.cos(yaw) * Math.cos(pitch)
     ).normalize();
 
-    const trail = new THREE.Mesh(
-      new THREE.SphereGeometry(0.14, 6, 6),
-      new THREE.MeshBasicMaterial({ color: def.category === 'heavy' ? 0xff6a1a : 0xfff2c0 })
-    );
-    trail.position.copy(origin);
-    this.scene.add(trail);
+    const mesh = createProjectileMesh(heavy);
+    mesh.position.copy(origin);
+    orientProjectile(mesh, dir);
+    this.scene.add(mesh);
+
+    const muzzle = spawnMuzzleFlash(this.scene, origin, dir, heavy);
+    this.effects.push({ isMuzzle: true, ...muzzle });
 
     this.projectiles.push({
       pos: origin,
       dir,
-      speed: 90,
-      life: def.range / 90,
+      speed: heavy ? 75 : 110,
+      life: def.range / (heavy ? 75 : 110),
       damage: def.damage,
       pen: def.armorPen,
       owner: unit,
-      heavy: def.category === 'heavy',
-      trail,
+      heavy,
+      mesh,
     });
 
     if (unit.isPlayer) {
-      SFX.fire(def.category === 'heavy');
+      SFX.fire(heavy);
       document.getElementById('crosshair')?.classList.add('firing');
       setTimeout(() => document.getElementById('crosshair')?.classList.remove('firing'), 60);
     }
@@ -514,25 +523,8 @@ export class Game {
   }
 
   spawnExplosion(pos) {
-    const group = new THREE.Group();
-    group.position.copy(pos);
-    group.position.y += 1;
-    for (let i = 0; i < 14; i++) {
-      const m = new THREE.Mesh(
-        new THREE.SphereGeometry(0.2 + Math.random() * 0.25, 6, 6),
-        new THREE.MeshBasicMaterial({ color: i % 2 ? 0xff6a1a : 0xffd166 })
-      );
-      m.position.set((Math.random() - 0.5) * 2, Math.random() * 2, (Math.random() - 0.5) * 2);
-      m.userData.vel = new THREE.Vector3(
-        (Math.random() - 0.5) * 8,
-        4 + Math.random() * 6,
-        (Math.random() - 0.5) * 8
-      );
-      group.add(m);
-    }
-    group.userData.life = 0.7;
-    this.scene.add(group);
-    this.effects.push(group);
+    const impact = spawnImpact(this.scene, pos.clone().add(new THREE.Vector3(0, 1, 0)), true);
+    this.effects.push(impact);
   }
 
   updateProjectiles(dt) {
@@ -540,17 +532,24 @@ export class Game {
     for (const p of this.projectiles) {
       p.life -= dt;
       p.pos.addScaledVector(p.dir, p.speed * dt);
-      if (p.trail) p.trail.position.copy(p.pos);
+      if (p.mesh) {
+        p.mesh.position.copy(p.pos);
+        orientProjectile(p.mesh, p.dir);
+        if (p.mesh.userData.trail) {
+          p.mesh.userData.trail.material.opacity = 0.35 + Math.random() * 0.35;
+        }
+      }
 
       let hit = p.life <= 0;
       if (!hit) {
         for (const u of this.units) {
           if (!u.alive || u === p.owner || u.team === p.owner.team) continue;
           const dist = u.mesh.position.distanceTo(p.pos);
-          const radius = u.vehicle.domain === 'air' ? 2.2 : 1.8;
+          const radius = u.vehicle.domain === 'air' ? 2.4 : 2.0;
           if (dist < radius) {
             const result = u.takeDamage(p.damage, p.owner, p.pen);
             if (p.owner.isPlayer) SFX.hit();
+            this.effects.push(spawnImpact(this.scene, p.pos.clone(), p.heavy));
             if (result.killed) {
               p.owner.kills += 1;
               p.owner.money = Math.min(MAX_MONEY, p.owner.money + KILL_REWARD);
@@ -582,13 +581,14 @@ export class Game {
             p.pos.z >= c.min.z && p.pos.z <= c.max.z &&
             p.pos.y <= c.max.y
           ) {
+            this.effects.push(spawnImpact(this.scene, p.pos.clone(), p.heavy));
             hit = true;
             break;
           }
         }
       }
       if (hit) {
-        if (p.trail) this.scene.remove(p.trail);
+        if (p.mesh) this.scene.remove(p.mesh);
       } else {
         remain.push(p);
       }
@@ -682,22 +682,7 @@ export class Game {
       if (!u.isPlayer) updateBot(u, this, dt);
     }
     this.updateProjectiles(dt);
-
-    for (const fx of this.effects) {
-      fx.userData.life -= dt;
-      fx.children.forEach((ch) => {
-        ch.position.addScaledVector(ch.userData.vel, dt);
-        ch.userData.vel.y -= 12 * dt;
-        ch.scale.multiplyScalar(0.98);
-      });
-    }
-    this.effects = this.effects.filter((fx) => {
-      if (fx.userData.life <= 0) {
-        this.scene.remove(fx);
-        return false;
-      }
-      return true;
-    });
+    this.effects = updateVfxList(this.effects, dt, this.scene);
 
     for (const c of this._smokeClouds) {
       c.userData.life -= dt;
