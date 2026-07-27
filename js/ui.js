@@ -557,6 +557,17 @@ export function createUI(game, inventory) {
     const ammo = p.ammo[v.id] || { mag: 0, reserve: 0 };
     $('hud-ammo').textContent = p.reloadT > 0 ? 'RELOADING…' : `${ammo.mag} / ${ammo.reserve}`;
 
+    const hint = $('hud-hint');
+    if (hint) {
+      if (game.input?.cmdMode) {
+        hint.textContent = `CMD ${game.input.cmdBuffer || '/'}  ·  Enter run · Esc cancel`;
+        hint.style.color = '#ffe08a';
+      } else {
+        hint.textContent = 'WASD/Arrows · F Fire · Space Jump (−5) · B Buy · R Reload · E Plant · G Smoke · V EMP · /give-tokens';
+        hint.style.color = '';
+      }
+    }
+
     const slots = $('hud-slots');
     slots.innerHTML = '';
     for (let i = 0; i < 3; i++) {

@@ -96,6 +96,7 @@ const ui = createUI({
   get bomb() { return gameRef.game?.bomb || { planted: false }; },
   get units() { return gameRef.game?.units || []; },
   get roundNumber() { return gameRef.game?.roundNumber || 0; },
+  get input() { return input; },
   startMatch(team) { gameRef.game.startMatch(team); },
   closeBuyMenu() { gameRef.game.closeBuyMenu(); },
   buyVehicle(id) { gameRef.game.buyVehicle(id); },

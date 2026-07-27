@@ -105,7 +105,10 @@ export class Unit {
       this.mesh.position.y = 8 + Math.sin(performance.now() * 0.002) * 0.2 + Math.max(0, this.vy * 0.05);
       this.grounded = true;
     } else if (d === 'sea') {
-      const base = 0.15 + Math.sin(performance.now() * 0.003 + this.id.length) * 0.06;
+      const onLand = this.getGroundY(x, z) > 0.45;
+      const base = onLand
+        ? this.getGroundY(x, z)
+        : 0.15 + Math.sin(performance.now() * 0.003 + this.id.length) * 0.06;
       if (this.vy > 0 || !this.grounded) {
         this.mesh.position.y += this.vy * 0.016;
       } else {
@@ -128,7 +131,11 @@ export class Unit {
       this.grounded = true;
       return false;
     }
-    const ground = d === 'sea' ? 0.15 : this.getGroundY(this.mesh.position.x, this.mesh.position.z);
+    const ground = d === 'sea'
+      ? (this.getGroundY(this.mesh.position.x, this.mesh.position.z) > 0.45
+        ? this.getGroundY(this.mesh.position.x, this.mesh.position.z)
+        : 0.15)
+      : this.getGroundY(this.mesh.position.x, this.mesh.position.z);
     if (!this.grounded || this.vy > 0) {
       this.vy -= 28 * dt;
       this.mesh.position.y += this.vy * dt;
