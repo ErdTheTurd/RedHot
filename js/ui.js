@@ -425,8 +425,12 @@ export function createUI(game, inventory) {
       const cant = player.money < v.price && !owned;
       const skin = inventory.getEquipped(v.id);
       const btn = document.createElement('button');
-      btn.className = `buy-item${cant ? ' cant' : ''}${owned ? ' owned' : ''}${selectedId === v.id ? ' selected' : ''}`;
-      btn.innerHTML = `<div class="name">${v.name}</div><div class="meta">${v.className} · ${skin?.shortName || 'Factory'}</div><div class="price">${formatMoney(v.price)}</div>`;
+      btn.className = `buy-item buy-item-skin${cant ? ' cant' : ''}${owned ? ' owned' : ''}${selectedId === v.id ? ' selected' : ''}`;
+      btn.innerHTML = `
+        <img class="buy-thumb" src="${skinImg(skin)}" alt="" width="64" height="64" />
+        <div class="name">${v.name}</div>
+        <div class="meta">${v.className} · ${skin?.shortName || 'Factory'}</div>
+        <div class="price">${formatMoney(v.price)}</div>`;
       btn.onclick = () => { selectedId = v.id; renderBuy(); };
       btn.ondblclick = () => game.buyVehicle(v.id);
       root.appendChild(btn);

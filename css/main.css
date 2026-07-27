@@ -405,6 +405,27 @@ html, body {
   font: inherit;
 }
 
+.buy-item-skin {
+  grid-template-columns: 56px 1fr auto;
+  align-items: center;
+}
+
+.buy-item-skin .buy-thumb {
+  grid-row: 1 / span 2;
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  border: 1px solid var(--line);
+  background: #0a1016;
+}
+
+.buy-item-skin .name { grid-column: 2; }
+.buy-item-skin .meta { grid-column: 2; }
+.buy-item-skin .price {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+}
+
 .buy-item:hover, .buy-item.selected {
   border-color: var(--line);
   background: rgba(255,255,255,0.05);
@@ -839,6 +860,12 @@ tr.you { background: rgba(255,255,255,0.05); }
   display: grid;
   grid-template-rows: auto auto 1fr;
   backdrop-filter: blur(12px);
+  overflow: hidden;
+}
+
+.meta-shell .shop-grid,
+.meta-shell .inv-layout {
+  min-height: 0;
 }
 
 .meta-header {
