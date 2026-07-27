@@ -4,6 +4,9 @@ import {
 import { CASES, KEYS, SKINS, RARITY, rarityColor } from './skins.js';
 import { skinImageDataUrl } from './skinArt.js';
 import { SFX } from './audio.js';
+import {
+  MAPS, MODES, isMapUnlocked, isModeUnlocked, xpProgress,
+} from './progression.js';
 
 function skinImg(skin) {
   const domain = VEHICLES[skin.vehicleId]?.domain || 'land';
@@ -16,6 +19,7 @@ export function createUI(game, inventory) {
   const screens = {
     menu: $('screen-menu'),
     howto: $('screen-howto'),
+    ops: $('screen-ops'),
     team: $('screen-team'),
     buy: $('screen-buy'),
     shop: $('screen-shop'),
@@ -29,6 +33,8 @@ export function createUI(game, inventory) {
   let crateFocus = null;
   let lastOpenedSkin = null;
   let reelSpinning = false;
+  let opsMap = inventory.profile?.selectedMap || 'ironfront';
+  let opsMode = inventory.profile?.selectedMode || 'strike';
 
   function showScreen(name) {
     Object.entries(screens).forEach(([k, el]) => {
@@ -42,19 +48,126 @@ export function createUI(game, inventory) {
 
   function refreshMeta() {
     const w = formatMoney(inventory.wallet);
-    if ($('menu-wallet')) $('menu-wallet').textContent = `BANK ${w}`;
+    if ($('menu-wallet')) {
+      const p = inventory.profile || {};
+      const lvl = p.level || 1;
+      $('menu-wallet').textContent = `BANK ${w} · LV ${lvl}`;
+    }
     if ($('shop-wallet')) $('shop-wallet').textContent = w;
     if ($('inv-wallet')) $('inv-wallet').textContent = w;
   }
 
   // —— Menu ——
-  $('btn-play').onclick = () => { SFX.ui(); showScreen('team'); };
+  $('btn-play').onclick = () => {
+    SFX.ui();
+    renderOps();
+    showScreen('ops');
+  };
   $('btn-howto').onclick = () => { SFX.ui(); showScreen('howto'); };
   $('btn-howto-back').onclick = () => { SFX.ui(); showScreen('menu'); };
-  $('btn-team-back').onclick = () => { SFX.ui(); showScreen('menu'); };
-  $('pick-raiders').onclick = () => game.startMatch(TEAMS.RAIDERS);
-  $('pick-sentinels').onclick = () => game.startMatch(TEAMS.SENTINELS);
+  $('btn-ops-back').onclick = () => { SFX.ui(); showScreen('menu'); };
+  $('btn-team-back').onclick = () => {
+    SFX.ui();
+    renderOps();
+    showScreen('ops');
+  };
+  $('btn-ops-continue').onclick = () => {
+    SFX.ui();
+    const mode = MODES[opsMode] || MODES.strike;
+    if (!isMapUnlocked(opsMap, inventory.profile) || !isModeUnlocked(opsMode, inventory.profile)) {
+      toast('Selection locked');
+      return;
+    }
+    inventory.setOps(opsMap, opsMode);
+    if (mode.teams) {
+      showScreen('team');
+    } else {
+      game.startMatch({ team: TEAMS.RAIDERS, mapId: opsMap, modeId: opsMode });
+    }
+  };
+  $('pick-raiders').onclick = () => game.startMatch({
+    team: TEAMS.RAIDERS,
+    mapId: opsMap,
+    modeId: opsMode,
+  });
+  $('pick-sentinels').onclick = () => game.startMatch({
+    team: TEAMS.SENTINELS,
+    mapId: opsMap,
+    modeId: opsMode,
+  });
   $('btn-buy-close').onclick = () => game.closeBuyMenu();
+
+  function renderOps() {
+    const profile = inventory.profile || {};
+    const wins = inventory.data?.stats?.wins || 0;
+    const prog = xpProgress(profile.xp || 0);
+    if ($('ops-rank')) $('ops-rank').textContent = `LEVEL ${prog.level} · ${wins} WINS`;
+    if ($('ops-xp-fill')) {
+      const pct = prog.need > 0 ? Math.min(100, (prog.into / prog.need) * 100) : 100;
+      $('ops-xp-fill').style.width = `${pct}%`;
+    }
+    if ($('ops-xp-label')) $('ops-xp-label').textContent = `${prog.into} / ${prog.need}`;
+
+    if (!isMapUnlocked(opsMap, profile)) opsMap = 'ironfront';
+    if (!isModeUnlocked(opsMode, profile)) opsMode = 'strike';
+
+    const mapsEl = $('ops-maps');
+    mapsEl.innerHTML = '';
+    for (const map of Object.values(MAPS)) {
+      const unlocked = isMapUnlocked(map.id, profile);
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = `ops-card map-${map.id}${opsMap === map.id ? ' selected' : ''}${unlocked ? '' : ' locked'}`;
+      card.disabled = !unlocked;
+      const lock = unlocked
+        ? ''
+        : `<span class="ops-lock">WIN ${map.winsRequired}</span>`;
+      card.innerHTML = `
+        <span class="ops-card-glow" style="--accent:${map.accent}"></span>
+        <span class="ops-card-tag">${map.theme.toUpperCase()}</span>
+        <strong>${map.name}</strong>
+        <p>${map.blurb}</p>
+        ${lock}
+      `;
+      card.onclick = () => {
+        if (!unlocked) return;
+        SFX.ui();
+        opsMap = map.id;
+        renderOps();
+      };
+      mapsEl.appendChild(card);
+    }
+
+    const modesEl = $('ops-modes');
+    modesEl.innerHTML = '';
+    for (const mode of Object.values(MODES)) {
+      const unlocked = isModeUnlocked(mode.id, profile);
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = `ops-card mode-${mode.id}${opsMode === mode.id ? ' selected' : ''}${unlocked ? '' : ' locked'}`;
+      card.disabled = !unlocked;
+      const lock = unlocked
+        ? ''
+        : `<span class="ops-lock">LV ${mode.levelRequired}</span>`;
+      card.innerHTML = `
+        <span class="ops-card-tag">${mode.freeRoam ? 'SOLO' : mode.teams ? 'TEAM' : 'SOLO'}</span>
+        <strong>${mode.name}</strong>
+        <p>${mode.blurb}</p>
+        ${lock}
+      `;
+      card.onclick = () => {
+        if (!unlocked) return;
+        SFX.ui();
+        opsMode = mode.id;
+        renderOps();
+      };
+      modesEl.appendChild(card);
+    }
+
+    const mapName = MAPS[opsMap]?.name || opsMap;
+    const modeName = MODES[opsMode]?.name || opsMode;
+    if ($('ops-summary')) $('ops-summary').textContent = `${mapName} · ${modeName}`;
+  }
 
   $('btn-shop').onclick = () => {
     SFX.ui();
@@ -556,14 +669,36 @@ export function createUI(game, inventory) {
     }
     const ammo = p.ammo[v.id] || { mag: 0, reserve: 0 };
     $('hud-ammo').textContent = p.reloadT > 0 ? 'RELOADING…' : `${ammo.mag} / ${ammo.reserve}`;
+    const ord = $('hud-ordnance');
+    if (ord) {
+      if (v.domain === 'air') {
+        ord.textContent = `BOMBS ${p.bombs || 0}`;
+        ord.style.display = '';
+      } else if (v.domain === 'sea') {
+        ord.textContent = `TORPEDOES ${p.torpedoes || 0}`;
+        ord.style.display = '';
+      } else {
+        ord.textContent = '';
+        ord.style.display = 'none';
+      }
+    }
 
     const hint = $('hud-hint');
     if (hint) {
       if (game.input?.cmdMode) {
         hint.textContent = `CMD ${game.input.cmdBuffer || '/'}  ·  Enter run · Esc cancel`;
         hint.style.color = '#ffe08a';
+      } else if (game.mode?.freeRoam) {
+        hint.textContent = 'Vigilante · F Gun · B Bombs · C Arsenal · T Torpedo · Esc Extract';
+        hint.style.color = '';
+      } else if (v.domain === 'air') {
+        hint.textContent = 'F Gun · B Bombs · R Reload · Space Jump · 1–3 Slots · G Smoke · V EMP';
+        hint.style.color = '';
+      } else if (v.domain === 'sea') {
+        hint.textContent = 'F Gun · T Torpedo · R Reload · Space Jump · 1–3 Slots · G Smoke · V EMP';
+        hint.style.color = '';
       } else {
-        hint.textContent = 'WASD/Arrows · F Fire · Space Jump (−5) · B Buy · R Reload · E Plant · G Smoke · V EMP · /give-tokens';
+        hint.textContent = 'WASD · F Gun · B Buy · R Reload · E Plant · G Smoke · V EMP · /give-tokens';
         hint.style.color = '';
       }
     }
@@ -581,7 +716,14 @@ export function createUI(game, inventory) {
     }
 
     const obj = $('hud-objective');
-    if (game.bomb.planted) {
+    const mode = game.mode;
+    if (mode?.freeRoam) {
+      obj.textContent = `VIGILANTE · ${p.kills} kills · Esc to extract`;
+    } else if (mode?.fragLimit) {
+      obj.textContent = `SKIRMISH · ${game.frags?.raiders || 0} – ${game.frags?.sentinels || 0} · first to ${mode.fragLimit}`;
+    } else if (mode?.bots === 'waves') {
+      obj.textContent = `SIEGE · ${game.waveKills || 0} / ${mode.waveKills} hostiles down`;
+    } else if (game.bomb.planted) {
       obj.textContent = `WARHEAD LIVE · SITE ${game.bomb.site} · ${formatTime(game.bomb.timer)}`;
     } else if (game.phase === 'buy') {
       obj.textContent = 'BUY PHASE — Press B for arsenal';

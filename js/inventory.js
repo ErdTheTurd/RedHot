@@ -1,6 +1,7 @@
 /** Persistent player inventory — crates, keys, skins, wallet (GitHub Pages / localStorage) */
 
 import { CASES, KEYS, SKINS, rollSkinFromCase, defaultSkinId } from './skins.js';
+import { awardXp, levelFromXp } from './progression.js';
 
 const STORAGE_KEY = 'vehicle_strike_inventory_v1';
 
@@ -32,6 +33,14 @@ function blank() {
     skins,
     equipped,
     stats: { matches: 0, wins: 0, opens: 0 },
+    profile: {
+      xp: 0,
+      level: 1,
+      unlockedMaps: ['ironfront'],
+      unlockedModes: ['strike'],
+      selectedMap: 'ironfront',
+      selectedMode: 'strike',
+    },
   };
 }
 
@@ -60,6 +69,7 @@ export function loadInventory() {
       skins,
       equipped,
       stats: { ...base.stats, ...(data.stats || {}) },
+      profile: { ...base.profile, ...(data.profile || {}) },
     };
   } catch {
     return blank();
@@ -175,9 +185,32 @@ export class InventoryService {
     return { ok: true, gained: skin.sellPrice };
   }
 
-  recordMatch(won, deposit) {
+  recordMatch(won, deposit, xpGain = 0) {
     this.data.stats.matches += 1;
     if (won) this.data.stats.wins += 1;
     this.addWallet(deposit);
+    if (xpGain > 0) this.addXp(xpGain);
+    else this.persist();
+  }
+
+  get profile() {
+    return this.data.profile;
+  }
+
+  addXp(amount) {
+    const before = this.data.profile.level || 1;
+    this.data.profile = awardXp(
+      { ...this.data.profile, stats: this.data.stats },
+      amount
+    );
+    this.data.profile.level = levelFromXp(this.data.profile.xp);
+    this.persist();
+    return { leveled: this.data.profile.level > before, profile: this.data.profile };
+  }
+
+  setOps(mapId, modeId) {
+    this.data.profile.selectedMap = mapId;
+    this.data.profile.selectedMode = modeId;
+    this.persist();
   }
 }

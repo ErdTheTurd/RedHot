@@ -9,23 +9,31 @@ import { createMap, getSpawns } from './map.js';
 import { updateBot } from './bots.js';
 import { SFX } from './audio.js';
 import {
-  createProjectileMesh, orientProjectile, spawnMuzzleFlash, spawnImpact,
+  createProjectileMesh, createBombMesh, createTorpedoMesh,
+  orientProjectile, spawnMuzzleFlash, spawnImpact,
   spawnExplosion, spawnSmokeCloud, spawnEmpBurst, updateVfxList,
 } from './vfx.js';
+import { MODES } from './progression.js';
 
 export class Game {
-  constructor({ scene, camera, input, ui, inventory }) {
+  constructor({ scene, camera, input, ui, inventory, lighting = null }) {
     this.scene = scene;
     this.camera = camera;
     this.input = input;
     this.ui = ui;
     this.inventory = inventory;
-    this.map = createMap(scene);
+    this.lighting = lighting;
+    this.mapId = 'ironfront';
+    this.modeId = 'strike';
+    this.mode = MODES.strike;
+    this.map = createMap(scene, this.mapId);
+    this.applyMapTheme();
     this.units = [];
     this.player = null;
     this.projectiles = [];
     this.effects = [];
     this.score = { raiders: 0, sentinels: 0 };
+    this.frags = { raiders: 0, sentinels: 0 };
     this.lossStreak = { raiders: 0, sentinels: 0 };
     this.roundNumber = 0;
     this.phase = PHASE.BUY;
@@ -33,6 +41,7 @@ export class Game {
     this.phaseLabel = 'BUY';
     this.plantTime = PLANT_TIME;
     this.defuseTime = DEFUSE_TIME;
+    this.waveKills = 0;
     this.bomb = {
       planted: false,
       site: null,
@@ -50,69 +59,124 @@ export class Game {
     this.camPitch = 0.45;
   }
 
-  startMatch(team) {
+  applyMapTheme() {
+    const theme = this.map?.theme;
+    if (!theme || !this.scene) return;
+    this.scene.background = new THREE.Color(theme.bg);
+    this.scene.fog = new THREE.FogExp2(theme.fog, theme.fogDensity);
+    if (this.lighting?.hemi) {
+      this.lighting.hemi.color.set(theme.hemiSky);
+      this.lighting.hemi.groundColor.set(theme.hemiGround);
+    }
+    if (this.lighting?.sun) {
+      this.lighting.sun.color.set(theme.sun);
+      this.lighting.sun.intensity = theme.sunIntensity;
+    }
+  }
+
+  loadMap(mapId) {
+    if (this.map?.group) this.scene.remove(this.map.group);
+    this.mapId = mapId || 'ironfront';
+    this.map = createMap(this.scene, this.mapId);
+    this.applyMapTheme();
+  }
+
+
+  startMatch(teamOrOpts, maybeMap, maybeMode) {
+    const opts = typeof teamOrOpts === 'object' && teamOrOpts
+      ? teamOrOpts
+      : { team: teamOrOpts, mapId: maybeMap, modeId: maybeMode };
+
+    const profile = this.inventory?.profile || {};
+    this.modeId = opts.modeId || profile.selectedMode || 'strike';
+    this.mode = MODES[this.modeId] || MODES.strike;
+    const mapId = opts.mapId || profile.selectedMap || 'ironfront';
+    if (mapId !== this.mapId) this.loadMap(mapId);
+    else this.applyMapTheme();
+
+    let team = opts.team || TEAMS.RAIDERS;
+    if (!this.mode.teams) team = TEAMS.RAIDERS;
+
     SFX.unlock();
     SFX.ui();
     this.ui.hideAllScreens();
     this.running = true;
     this.score = { raiders: 0, sentinels: 0 };
+    this.frags = { raiders: 0, sentinels: 0 };
+    this.waveKills = 0;
     this.lossStreak = { raiders: 0, sentinels: 0 };
     this.roundNumber = 0;
 
-    // clear units
     for (const u of this.units) this.scene.remove(u.mesh);
     this.units = [];
 
-    const playerName = 'You';
     const spawnsR = getSpawns('raiders');
     const spawnsS = getSpawns('sentinels');
-
     const groundY = (x, z) => this.map.groundHeight(x, z);
 
     this.player = new Unit({
       id: 'player',
-      name: playerName,
+      name: this.mode.freeRoam ? 'Vigilante' : 'You',
       team,
       isPlayer: true,
       spawn: team === TEAMS.RAIDERS ? spawnsR[0] : spawnsS[0],
-      vehicleId: 'scout_tracker',
+      vehicleId: this.mode.freeRoam ? 'raptor_strike' : 'scout_tracker',
       getSkin: (vid) => this.inventory?.getEquipped(vid) || null,
       getGroundY: groundY,
     });
-    this.player.money = START_MONEY;
+    this.player.money = this.mode.freeRoam ? MAX_MONEY : START_MONEY;
     this.scene.add(this.player.mesh);
     this.units.push(this.player);
+    this.placeDomainVehicle(this.player);
 
-    const raiderBots = team === TEAMS.RAIDERS ? 3 : 4;
-    const sentinelBots = team === TEAMS.SENTINELS ? 3 : 4;
-
-    for (let i = 0; i < raiderBots; i++) {
-      const spawn = spawnsR[team === TEAMS.RAIDERS ? i + 1 : i];
-      const u = new Unit({
-        id: `r${i}`,
-        name: BOT_NAMES.raiders[i],
-        team: TEAMS.RAIDERS,
-        spawn,
-        vehicleId: 'scout_tracker',
-        getGroundY: groundY,
-      });
-      u.money = START_MONEY;
-      this.scene.add(u.mesh);
-      this.units.push(u);
-    }
-    for (let i = 0; i < sentinelBots; i++) {
-      const spawn = spawnsS[team === TEAMS.SENTINELS ? i + 1 : i];
-      const u = new Unit({
-        id: `s${i}`,
-        name: BOT_NAMES.sentinels[i],
-        team: TEAMS.SENTINELS,
-        spawn,
-        vehicleId: 'scout_tracker',
-        getGroundY: groundY,
-      });
-      u.money = START_MONEY;
-      this.scene.add(u.mesh);
-      this.units.push(u);
+    if (this.mode.bots === 'full') {
+      const raiderBots = team === TEAMS.RAIDERS ? 3 : 4;
+      const sentinelBots = team === TEAMS.SENTINELS ? 3 : 4;
+      for (let i = 0; i < raiderBots; i++) {
+        const spawn = spawnsR[team === TEAMS.RAIDERS ? i + 1 : i];
+        const u = new Unit({
+          id: `r${i}`,
+          name: BOT_NAMES.raiders[i],
+          team: TEAMS.RAIDERS,
+          spawn,
+          vehicleId: 'scout_tracker',
+          getGroundY: groundY,
+        });
+        u.money = START_MONEY;
+        this.scene.add(u.mesh);
+        this.units.push(u);
+      }
+      for (let i = 0; i < sentinelBots; i++) {
+        const spawn = spawnsS[team === TEAMS.SENTINELS ? i + 1 : i];
+        const u = new Unit({
+          id: `s${i}`,
+          name: BOT_NAMES.sentinels[i],
+          team: TEAMS.SENTINELS,
+          spawn,
+          vehicleId: 'scout_tracker',
+          getGroundY: groundY,
+        });
+        u.money = START_MONEY;
+        this.scene.add(u.mesh);
+        this.units.push(u);
+      }
+    } else if (this.mode.bots === 'hostiles' || this.mode.bots === 'waves') {
+      const n = this.mode.hostileCount || 6;
+      for (let i = 0; i < n; i++) {
+        const spawn = spawnsS[i % spawnsS.length];
+        const u = new Unit({
+          id: `h${i}`,
+          name: BOT_NAMES.sentinels[i % BOT_NAMES.sentinels.length],
+          team: TEAMS.SENTINELS,
+          spawn,
+          vehicleId: ['scout_tracker', 'patrol_cutter', 'falcon_interceptor'][i % 3],
+          getGroundY: groundY,
+        });
+        u.money = START_MONEY;
+        this.scene.add(u.mesh);
+        this.units.push(u);
+        this.placeDomainVehicle(u);
+      }
     }
 
     this.input.requestLock();
@@ -121,9 +185,15 @@ export class Game {
 
   beginRound() {
     this.roundNumber += 1;
-    this.phase = PHASE.BUY;
-    this.phaseLabel = 'BUY';
-    this.timer = BUY_TIME;
+    if (this.mode?.buyPhase === false || this.mode?.freeRoam) {
+      this.phase = PHASE.LIVE;
+      this.phaseLabel = this.mode.freeRoam ? 'VIGILANTE' : 'LIVE';
+      this.timer = this.mode.freeRoam ? 9999 : ROUND_TIME;
+    } else {
+      this.phase = PHASE.BUY;
+      this.phaseLabel = 'BUY';
+      this.timer = BUY_TIME;
+    }
     this.clearBomb();
     this.projectiles = [];
     // Clear lingering VFX from previous round
@@ -149,14 +219,24 @@ export class Game {
       u.resetForRound(spawn, true);
     }
 
-    // give bomb to random raider
-    const raiders = this.units.filter((u) => u.team === TEAMS.RAIDERS);
-    const carrier = raiders[Math.floor(Math.random() * raiders.length)];
-    carrier.hasBomb = true;
-    this.bomb.carrier = carrier;
+    if (this.mode?.plant) {
+      const raiders = this.units.filter((u) => u.team === TEAMS.RAIDERS);
+      if (raiders.length) {
+        const carrier = raiders[Math.floor(Math.random() * raiders.length)];
+        carrier.hasBomb = true;
+        this.bomb.carrier = carrier;
+      }
+    }
 
-    this.ui.showBanner(`ROUND ${this.roundNumber}`, 'Buy phase');
-    this.ui.toast('Press B to open arsenal');
+    if (this.mode?.freeRoam) {
+      this.ui.showBanner('VIGILANTE', `${this.mode.name} · free roam`);
+      this.ui.toast('Free roam — Esc extract · F gun · B bombs (air) or buy (ground) · T torpedoes');
+    } else if (this.mode?.buyPhase === false) {
+      this.ui.showBanner(this.mode.name.toUpperCase(), 'Fight');
+    } else {
+      this.ui.showBanner(`ROUND ${this.roundNumber}`, this.mode?.name || 'Buy phase');
+      this.ui.toast('Press B to open arsenal');
+    }
     if (!this.buyOpen && this.player.alive) {
       // auto hint only
     }
@@ -215,8 +295,16 @@ export class Game {
 
   endRound(winner, reason) {
     if (this.phase === PHASE.END) return;
+    if (this.mode?.freeRoam) return;
     this.phase = PHASE.END;
     this.phaseLabel = 'ROUND';
+
+    // Frag / siege modes end the whole match from objectives — no classic rounds
+    if (this.mode?.fragLimit || this.mode?.bots === 'waves') {
+      this.finishMatch(winner === this.player.team, reason);
+      return;
+    }
+
     this.score[winner] += 1;
 
     const loser = winner === TEAMS.RAIDERS ? TEAMS.SENTINELS : TEAMS.RAIDERS;
@@ -236,34 +324,142 @@ export class Game {
     if (winner === this.player.team) SFX.roundWin();
     else SFX.roundLoss();
 
-    if (this.score.raiders >= ROUNDS_TO_WIN || this.score.sentinels >= ROUNDS_TO_WIN) {
+    const need = this.mode?.roundsToWin || ROUNDS_TO_WIN;
+    if (this.score.raiders >= need || this.score.sentinels >= need) {
       const playerWon =
         (this.score.raiders > this.score.sentinels && this.player.team === TEAMS.RAIDERS) ||
         (this.score.sentinels > this.score.raiders && this.player.team === TEAMS.SENTINELS);
-      const deposit = 400 + this.player.kills * 80 + (playerWon ? 900 : 250) + Math.floor(this.player.money * 0.15);
-      this.inventory?.recordMatch(playerWon, deposit);
-      setTimeout(() => {
-        this.ui.showBanner(
-          this.score.raiders > this.score.sentinels ? 'RAIDERS MATCH WIN' : 'SENTINELS MATCH WIN',
-          `Bank +${deposit} · ${this.score.raiders} – ${this.score.sentinels}`
-        );
-        setTimeout(() => {
-          this.running = false;
-          this.ui.hideAllScreens();
-          document.getElementById('hud').classList.add('hidden');
-          this.input.exitLock();
-          this.ui.refreshMeta?.();
-          this.ui.showScreen('menu');
-        }, 2800);
-      }, 2200);
+      this.finishMatch(playerWon, reason);
       return;
     }
 
     setTimeout(() => this.beginRound(), 3200);
   }
 
+  finishMatch(playerWon, reason = '') {
+    if (this.phase === PHASE.END && this._finishing) return;
+    this._finishing = true;
+    this.phase = PHASE.END;
+    this.phaseLabel = 'END';
+    const deposit = 400 + this.player.kills * 80 + (playerWon ? 900 : 250) + Math.floor(this.player.money * 0.15);
+    const xp = 120 + this.player.kills * 35 + (playerWon ? 200 : 60);
+    this.inventory?.recordMatch(playerWon, deposit, xp);
+    const title = playerWon ? 'OPERATION SUCCESS' : 'OPERATION FAILED';
+    this.ui.showBanner(title, reason || `Bank +${deposit}`);
+    if (playerWon) SFX.roundWin();
+    else SFX.roundLoss();
+    setTimeout(() => {
+      this.ui.showBanner(
+        playerWon ? 'MATCH WIN' : 'MATCH LOSS',
+        `Bank +${deposit} · XP +${xp} · Lv ${this.inventory?.profile?.level || 1}`
+      );
+      setTimeout(() => {
+        this.running = false;
+        this._finishing = false;
+        this.ui.hideAllScreens();
+        document.getElementById('hud').classList.add('hidden');
+        this.input.exitLock();
+        this.ui.refreshMeta?.();
+        this.ui.showScreen('menu');
+      }, 2800);
+    }, 2200);
+  }
+
+  extractVigilante() {
+    if (!this.mode?.freeRoam || this.phase === PHASE.END) return;
+    this.phase = PHASE.END;
+    this.phaseLabel = 'EXTRACT';
+    const deposit = 500 + this.player.kills * 100 + Math.floor(this.player.money * 0.1);
+    const xp = 80 + this.player.kills * 40;
+    this.inventory?.recordMatch(true, deposit, xp);
+    SFX.roundWin();
+    this.ui.showBanner('EXTRACTED', `Solo run complete · Bank +${deposit} · XP +${xp}`);
+    setTimeout(() => {
+      this.running = false;
+      this.ui.hideAllScreens();
+      document.getElementById('hud').classList.add('hidden');
+      this.input.exitLock();
+      this.ui.refreshMeta?.();
+      this.ui.showScreen('menu');
+    }, 2600);
+  }
+
+  detonateOrdnance(p) {
+    this.spawnExplosion(p.pos.clone());
+    const radius = p.radius || 6;
+    for (const u of this.units) {
+      if (!u.alive || u === p.owner) continue;
+      if (this.mode?.teams && u.team === p.owner.team) continue;
+      const dist = u.mesh.position.distanceTo(p.pos);
+      if (dist > radius) continue;
+      const falloff = 1 - dist / radius;
+      const dmg = p.damage * (0.45 + falloff * 0.55);
+      const result = u.takeDamage(dmg, p.owner, p.pen);
+      if (p.owner.isPlayer) SFX.hit();
+      if (result.killed) {
+        p.owner.kills += 1;
+        this.frags[p.owner.team] = (this.frags[p.owner.team] || 0) + 1;
+        if (p.owner.isPlayer) this.waveKills += 1;
+        p.owner.money = Math.min(MAX_MONEY, p.owner.money + KILL_REWARD);
+        SFX.kill();
+        this.spawnExplosion(u.mesh.position.clone());
+        this.ui.killFeed(p.owner, u, p.kind === 'torpedo' ? 'TORPEDO' : 'BOMB');
+        this.ui.toast(p.owner.isPlayer ? `Destroyed ${u.name}` : `${p.owner.name} wrecked ${u.name}`);
+        this.checkElimination();
+        this.checkModeObjectives();
+      }
+    }
+  }
+
+  checkModeObjectives() {
+    if (this.phase === PHASE.END) return;
+    if (this.mode?.fragLimit) {
+      const need = this.mode.fragLimit;
+      if ((this.frags.raiders || 0) >= need) {
+        this.endRound(TEAMS.RAIDERS, `${need} frags`);
+        return;
+      }
+      if ((this.frags.sentinels || 0) >= need) {
+        this.endRound(TEAMS.SENTINELS, `${need} frags`);
+        return;
+      }
+    }
+    if (this.mode?.bots === 'waves' && this.waveKills >= (this.mode.waveKills || 12)) {
+      this.endRound(this.player.team, 'Siege held');
+      return;
+    }
+    if (this.mode?.bots === 'waves') {
+      const hostilesAlive = this.units.some((u) => u.alive && u.team === TEAMS.SENTINELS);
+      if (!hostilesAlive) this.spawnSiegeWave();
+    }
+  }
+
+  spawnSiegeWave() {
+    const spawnsS = getSpawns('sentinels');
+    const groundY = (x, z) => this.map.groundHeight(x, z);
+    const pool = ['scout_tracker', 'patrol_cutter', 'falcon_interceptor', 'mbt_anvil', 'destroyer_hull'];
+    for (let i = 0; i < 4; i++) {
+      const spawn = spawnsS[i % spawnsS.length];
+      const u = new Unit({
+        id: `w${this.roundNumber}_${Date.now()}_${i}`,
+        name: BOT_NAMES.sentinels[i % BOT_NAMES.sentinels.length],
+        team: TEAMS.SENTINELS,
+        spawn,
+        vehicleId: pool[i % pool.length],
+        getGroundY: groundY,
+      });
+      u.money = START_MONEY;
+      this.scene.add(u.mesh);
+      this.units.push(u);
+      this.placeDomainVehicle(u);
+    }
+    this.ui.toast('Incoming siege wave');
+    this.ui.showBanner('WAVE INBOUND', `${this.waveKills} / ${this.mode.waveKills} kills`);
+  }
+
   openBuyMenu() {
-    if (!this.running || this.phase !== PHASE.BUY) return;
+    if (!this.running) return;
+    if (this.phase !== PHASE.BUY && !this.mode?.freeRoam) return;
     this.buyOpen = true;
     this.input.exitLock();
     this.ui.openBuy();
@@ -419,6 +615,7 @@ export class Game {
     this.effects.push({ isMuzzle: true, ...muzzle });
 
     this.projectiles.push({
+      kind: 'gun',
       pos: origin,
       dir,
       speed: heavy ? 75 : 110,
@@ -434,6 +631,80 @@ export class Game {
       SFX.fire(heavy);
       document.getElementById('crosshair')?.classList.add('firing');
       setTimeout(() => document.getElementById('crosshair')?.classList.remove('firing'), 60);
+    }
+  }
+
+
+  tryDropBomb(unit) {
+    if (!unit?.alive) return;
+    if (this.phase !== PHASE.LIVE && this.phase !== PHASE.BOMB) return;
+    if (unit.vehicle.domain !== 'air') return;
+    if ((unit.bombs || 0) <= 0) {
+      if (unit.isPlayer) this.ui.toast('No bombs loaded');
+      return;
+    }
+    if (unit.secondaryCooldown > 0) return;
+    unit.bombs -= 1;
+    unit.secondaryCooldown = 0.55;
+    const origin = unit.mesh.position.clone();
+    origin.y -= 0.8;
+    const mesh = createBombMesh();
+    mesh.position.copy(origin);
+    this.scene.add(mesh);
+    this.projectiles.push({
+      kind: 'bomb',
+      pos: origin,
+      dir: new THREE.Vector3(Math.sin(unit.yaw) * 0.15, -1, Math.cos(unit.yaw) * 0.15).normalize(),
+      speed: 28,
+      vy: -2,
+      life: 6,
+      damage: 95 + (unit.vehicle.bombs || 1) * 4,
+      pen: 1,
+      radius: 9,
+      owner: unit,
+      heavy: true,
+      mesh,
+    });
+    if (unit.isPlayer) {
+      SFX.fire(true);
+      this.ui.toast(`Bomb away · ${unit.bombs} left`, 900);
+    }
+  }
+
+  tryFireTorpedo(unit) {
+    if (!unit?.alive) return;
+    if (this.phase !== PHASE.LIVE && this.phase !== PHASE.BOMB) return;
+    if (unit.vehicle.domain !== 'sea') return;
+    if ((unit.torpedoes || 0) <= 0) {
+      if (unit.isPlayer) this.ui.toast('No torpedoes loaded');
+      return;
+    }
+    if (unit.secondaryCooldown > 0) return;
+    unit.torpedoes -= 1;
+    unit.secondaryCooldown = 0.85;
+    const dir = new THREE.Vector3(Math.sin(unit.yaw), 0, Math.cos(unit.yaw)).normalize();
+    const origin = unit.mesh.position.clone().addScaledVector(dir, 3.5);
+    origin.y = 0.35;
+    const mesh = createTorpedoMesh();
+    mesh.position.copy(origin);
+    orientProjectile(mesh, dir);
+    this.scene.add(mesh);
+    this.projectiles.push({
+      kind: 'torpedo',
+      pos: origin,
+      dir,
+      speed: 42,
+      life: unit.vehicle.range / 42 + 0.5,
+      damage: 80 + (unit.vehicle.torpedoes || 1) * 5,
+      pen: 0.95,
+      radius: 4,
+      owner: unit,
+      heavy: true,
+      mesh,
+    });
+    if (unit.isPlayer) {
+      SFX.fire(true);
+      this.ui.toast(`Torpedo · ${unit.torpedoes} left`, 900);
     }
   }
 
@@ -499,12 +770,18 @@ export class Game {
     p.updateJump(dt);
     if (p.grounded) p._adjustHeight();
 
-    // Shoot with F (hold to fire)
+    p.secondaryCooldown = Math.max(0, (p.secondaryCooldown || 0) - dt);
+
+    // F = guns · B = jet bombs (live) · T = ship torpedoes
     if (this.input.pressed('KeyF')) this.tryFire(p);
+    if (this.input.consumePress('KeyB') && this.phase !== PHASE.BUY && !this.buyOpen) {
+      if (p.vehicle.domain === 'air') this.tryDropBomb(p);
+    }
+    if (this.input.consumePress('KeyT')) this.tryFireTorpedo(p);
     if (this.input.pressed('KeyR')) this.startReload(p);
 
     // plant / defuse
-    if (this.input.pressed('KeyE')) {
+    if (this.input.pressed('KeyE') && this.mode?.plant) {
       if (p.team === TEAMS.RAIDERS && p.hasBomb && !this.bomb.planted) {
         for (const [label, site] of Object.entries(this.map.sites)) {
           if (p.mesh.position.distanceTo(site) < 4.5) {
@@ -565,7 +842,16 @@ export class Game {
       return;
     }
 
-    this.ui.toast(`Unknown command: ${cmd} — try /give-tokens`);
+    if (cmd === '/give-xp' || cmd === '/givexp' || cmd === '/xp') {
+      const amount = Math.max(1, parseInt(parts[1], 10) || 5000);
+      const res = this.inventory?.addXp(amount);
+      this.ui.refreshMeta?.();
+      this.ui.toast(`+${amount} XP · Level ${res?.profile?.level || '?'}`);
+      SFX.buy();
+      return;
+    }
+
+    this.ui.toast(`Unknown command: ${cmd} — try /give-tokens or /give-xp`);
   }
 
   deploySmoke(unit) {
@@ -600,33 +886,60 @@ export class Game {
     const remain = [];
     for (const p of this.projectiles) {
       p.life -= dt;
-      p.pos.addScaledVector(p.dir, p.speed * dt);
-      if (p.mesh) {
-        p.mesh.position.copy(p.pos);
-        orientProjectile(p.mesh, p.dir);
-        if (p.mesh.userData.trail) {
-          p.mesh.userData.trail.material.opacity = 0.35 + Math.random() * 0.35;
+      if (p.kind === 'bomb') {
+        p.vy = (p.vy ?? -2) - 38 * dt;
+        p.pos.x += p.dir.x * p.speed * 0.25 * dt;
+        p.pos.z += p.dir.z * p.speed * 0.25 * dt;
+        p.pos.y += p.vy * dt;
+        if (p.mesh) {
+          p.mesh.position.copy(p.pos);
+          p.mesh.rotation.x += dt * 4;
+        }
+      } else {
+        p.pos.addScaledVector(p.dir, p.speed * dt);
+        if (p.kind === 'torpedo') p.pos.y = 0.35;
+        if (p.mesh) {
+          p.mesh.position.copy(p.pos);
+          orientProjectile(p.mesh, p.dir);
+          if (p.mesh.userData.trail) {
+            p.mesh.userData.trail.material.opacity = 0.35 + Math.random() * 0.35;
+          }
         }
       }
 
       let hit = p.life <= 0;
+      if (p.kind === 'bomb') {
+        const ground = this.map.groundHeight(p.pos.x, p.pos.z);
+        if (p.pos.y <= ground + 0.4) {
+          hit = true;
+          this.detonateOrdnance(p);
+        }
+      }
       if (!hit) {
         for (const u of this.units) {
           if (!u.alive || u === p.owner || u.team === p.owner.team) continue;
           const dist = u.mesh.position.distanceTo(p.pos);
-          const radius = u.vehicle.domain === 'air' ? 2.4 : 2.0;
+          const radius = p.radius || (u.vehicle.domain === 'air' ? 2.4 : 2.0);
           if (dist < radius) {
+            if (p.kind === 'bomb' || p.kind === 'torpedo') {
+              this.detonateOrdnance(p);
+              hit = true;
+              break;
+            }
             const result = u.takeDamage(p.damage, p.owner, p.pen);
             if (p.owner.isPlayer) SFX.hit();
             this.effects.push(spawnImpact(this.scene, p.pos.clone(), p.heavy));
             if (result.killed) {
               p.owner.kills += 1;
+              this.frags[p.owner.team] = (this.frags[p.owner.team] || 0) + 1;
+              this.waveKills += p.owner.isPlayer ? 1 : 0;
               p.owner.money = Math.min(MAX_MONEY, p.owner.money + KILL_REWARD);
               SFX.kill();
               this.spawnExplosion(u.mesh.position.clone());
               this.ui.killFeed(p.owner, u, p.owner.vehicle.name);
               this.ui.toast(p.owner.isPlayer ? `Destroyed ${u.name}` : `${p.owner.name} wrecked ${u.name}`);
               this.checkElimination();
+              this.checkModeObjectives();
               if (u.hasBomb) {
                 u.hasBomb = false;
                 const living = this.units.filter((x) => x.alive && x.team === TEAMS.RAIDERS);
@@ -666,10 +979,52 @@ export class Game {
   }
 
   checkElimination() {
+    if (this.mode?.freeRoam) {
+      this.queueRespawnDead(2.8);
+      return;
+    }
+    if (this.mode?.fragLimit) {
+      this.checkModeObjectives();
+      this.queueRespawnDead(2.5);
+      return;
+    }
+    if (this.mode?.bots === 'waves') {
+      this.checkModeObjectives();
+      return;
+    }
     const raidersAlive = this.units.some((u) => u.alive && u.team === TEAMS.RAIDERS);
     const sentAlive = this.units.some((u) => u.alive && u.team === TEAMS.SENTINELS);
     if (!sentAlive) this.endRound(TEAMS.RAIDERS, 'Sentinels eliminated');
     else if (!raidersAlive && !this.bomb.planted) this.endRound(TEAMS.SENTINELS, 'Raiders eliminated');
+  }
+
+  queueRespawnDead(delay = 2.5) {
+    for (const u of this.units) {
+      if (u.alive || u._respawnAt) continue;
+      if (u.isPlayer && this.mode?.freeRoam) {
+        // Vigilante: soft respawn near spawn with full hull
+        u._respawnAt = performance.now() + delay * 1000;
+        continue;
+      }
+      if (!u.isPlayer) u._respawnAt = performance.now() + delay * 1000;
+    }
+  }
+
+  processRespawns() {
+    const now = performance.now();
+    const spawnsR = getSpawns('raiders');
+    const spawnsS = getSpawns('sentinels');
+    for (const u of this.units) {
+      if (u.alive || !u._respawnAt || now < u._respawnAt) continue;
+      u._respawnAt = 0;
+      const spawn = u.team === TEAMS.RAIDERS
+        ? spawnsR[Math.floor(Math.random() * spawnsR.length)]
+        : spawnsS[Math.floor(Math.random() * spawnsS.length)];
+      u.resetForRound(spawn);
+      this.placeDomainVehicle(u);
+      u.respawnProtected = 1.2;
+      if (u.isPlayer) this.ui.toast('Back in the fight');
+    }
   }
 
   updateCamera() {
@@ -700,7 +1055,7 @@ export class Game {
     if (!this.running) return;
 
     // phase timer
-    if (this.phase !== PHASE.END) {
+    if (this.phase !== PHASE.END && !this.mode?.freeRoam) {
       this.timer -= dt;
       if (this.phase === PHASE.BUY && this.timer <= 0) {
         this.phase = PHASE.LIVE;
@@ -710,10 +1065,16 @@ export class Game {
         this.ui.showBanner('FIGHT', `Round ${this.roundNumber}`);
         this.ui.toast('Weapons free');
       } else if (this.phase === PHASE.LIVE && this.timer <= 0) {
-        // time expired
         if (this.bomb.planted) {
-          // shouldn't happen — bomb phase overrides
-        } else {
+          // bomb phase overrides
+        } else if (this.mode?.fragLimit) {
+          const rf = this.frags.raiders || 0;
+          const sf = this.frags.sentinels || 0;
+          if (rf === sf) this.endRound(TEAMS.SENTINELS, 'Time — draw goes to defense');
+          else this.endRound(rf > sf ? TEAMS.RAIDERS : TEAMS.SENTINELS, 'Time expired');
+        } else if (this.mode?.bots === 'waves') {
+          this.endRound(TEAMS.SENTINELS, 'Siege overrun — time expired');
+        } else if (this.mode?.plant !== false) {
           this.endRound(TEAMS.SENTINELS, 'Time expired — sites held');
         }
       } else if (this.phase === PHASE.BOMB) {
@@ -751,6 +1112,7 @@ export class Game {
       if (!u.isPlayer) updateBot(u, this, dt);
     }
     this.updateProjectiles(dt);
+    this.processRespawns();
     this.effects = updateVfxList(this.effects, dt, this.scene);
 
     if (this.bomb.mesh) {
@@ -765,11 +1127,25 @@ export class Game {
 
   onKeyDown(e) {
     if (!this.running) return;
+    if (e.code === 'Escape' && this.mode?.freeRoam && !this.buyOpen) {
+      this.extractVigilante();
+      return;
+    }
     if (e.code === 'KeyB') {
       if (this.phase === PHASE.BUY) {
         if (this.buyOpen) this.closeBuyMenu();
         else this.openBuyMenu();
+      } else if (this.mode?.freeRoam) {
+        // Air: B drops bombs (handled in updatePlayer). Ground/sea: B opens arsenal.
+        if (this.player?.vehicle?.domain !== 'air') {
+          if (this.buyOpen) this.closeBuyMenu();
+          else this.openBuyMenu();
+        }
       }
+    }
+    if (e.code === 'KeyC' && this.mode?.freeRoam) {
+      if (this.buyOpen) this.closeBuyMenu();
+      else this.openBuyMenu();
     }
     if (e.code === 'Digit1') { this.player?.switchSlot(0); this.placeDomainVehicle(this.player); }
     if (e.code === 'Digit2') { this.player?.switchSlot(1); this.placeDomainVehicle(this.player); }

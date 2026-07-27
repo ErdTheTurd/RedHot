@@ -101,6 +101,64 @@ export function createProjectileMesh(heavy = false) {
   return g;
 }
 
+/** Air-dropped freefall bomb */
+export function createBombMesh() {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.14, 0.18, 0.7, 10),
+    new THREE.MeshStandardMaterial({ color: 0x2a3038, metalness: 0.7, roughness: 0.35 })
+  );
+  g.add(body);
+  const nose = new THREE.Mesh(
+    new THREE.ConeGeometry(0.18, 0.28, 10),
+    new THREE.MeshStandardMaterial({ color: 0x1a1e24, metalness: 0.6, roughness: 0.4, emissive: 0x401000, emissiveIntensity: 0.3 })
+  );
+  nose.position.y = -0.45;
+  g.add(nose);
+  const finMat = new THREE.MeshStandardMaterial({ color: 0x4a5560, metalness: 0.5, roughness: 0.45 });
+  for (let i = 0; i < 4; i++) {
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.22, 0.18), finMat);
+    const a = (i / 4) * Math.PI * 2;
+    fin.position.set(Math.cos(a) * 0.16, 0.28, Math.sin(a) * 0.16);
+    g.add(fin);
+  }
+  return g;
+}
+
+/** Ship torpedo — long sleek water weapon */
+export function createTorpedoMesh() {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.1, 0.12, 1.4, 12),
+    new THREE.MeshStandardMaterial({ color: 0x3a6a58, metalness: 0.85, roughness: 0.25, emissive: 0x0a3020, emissiveIntensity: 0.25 })
+  );
+  body.rotation.x = Math.PI / 2;
+  g.add(body);
+  const nose = new THREE.Mesh(
+    new THREE.ConeGeometry(0.12, 0.35, 12),
+    new THREE.MeshStandardMaterial({ color: 0xc8a040, metalness: 0.7, roughness: 0.3, emissive: 0x604000, emissiveIntensity: 0.4 })
+  );
+  nose.rotation.x = -Math.PI / 2;
+  nose.position.z = -0.85;
+  g.add(nose);
+  const trail = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.25, 1.8),
+    new THREE.MeshBasicMaterial({
+      color: 0x88ffe0,
+      transparent: true,
+      opacity: 0.45,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+    })
+  );
+  trail.rotation.x = Math.PI / 2;
+  trail.position.z = 1.1;
+  g.add(trail);
+  g.userData.trail = trail;
+  return g;
+}
+
 export function spawnMuzzleFlash(scene, position, direction, heavy = false) {
   const tex = getMuzzleTex();
   const mat = new THREE.SpriteMaterial({

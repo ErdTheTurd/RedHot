@@ -26,6 +26,9 @@ export class Unit {
     this.loadout = [vehicleId || 'scout_tracker', null, null];
     this.activeSlot = 0;
     this.ammo = {};
+    this.bombs = 0;
+    this.torpedoes = 0;
+    this.secondaryCooldown = 0;
     this.yaw = spawn?.yaw ?? 0;
     this.pitch = 0;
     this.vel = new THREE.Vector3();
@@ -51,7 +54,14 @@ export class Unit {
     this.mesh.rotation.y = this.yaw;
     this.mesh.userData.unitId = id;
     this._ensureAmmo(def.id);
+    this._refillOrdnance(def);
     this._adjustHeight();
+  }
+
+  _refillOrdnance(def) {
+    const d = def || this.vehicle;
+    this.bombs = d.bombs || 0;
+    this.torpedoes = d.torpedoes || 0;
   }
 
   get vehicle() {
@@ -70,6 +80,7 @@ export class Unit {
     this._ensureAmmo(vehicleId);
     this.activeSlot = slot;
     this._swapMesh();
+    this._refillOrdnance();
   }
 
   switchSlot(slot) {
@@ -77,6 +88,7 @@ export class Unit {
     this.activeSlot = slot;
     this.reloadT = 0;
     this._swapMesh();
+    this._refillOrdnance();
   }
 
   _swapMesh() {
@@ -198,6 +210,7 @@ export class Unit {
     this.mesh.rotation.y = this.yaw;
     this.mesh.visible = true;
     this._swapMesh();
+    this._refillOrdnance();
     this._adjustHeight();
   }
 

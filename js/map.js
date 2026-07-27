@@ -9,6 +9,73 @@ import {
 
 const MAP_SIZE = 120;
 
+const THEMES = {
+  harbor: {
+    id: 'harbor',
+    landBase: [55, 70, 48],
+    sandBase: [145, 125, 85],
+    waterColor: 0x2a7aa0,
+    concrete: 0xc8d0da,
+    cliff: 0x4a5344,
+    fog: 0x8eb6c8,
+    fogDensity: 0.008,
+    bg: 0x6a9ab8,
+    hemiSky: 0xd8eef8,
+    hemiGround: 0x3a4a30,
+    sun: 0xfff0d0,
+    sunIntensity: 1.45,
+    night: false,
+  },
+  desert: {
+    id: 'desert',
+    landBase: [160, 120, 70],
+    sandBase: [190, 150, 90],
+    waterColor: 0x3a9aaa,
+    concrete: 0xc4b49a,
+    cliff: 0xa87848,
+    fog: 0xd8c090,
+    fogDensity: 0.007,
+    bg: 0xc8a868,
+    hemiSky: 0xffe6b8,
+    hemiGround: 0x8a6030,
+    sun: 0xffe0a0,
+    sunIntensity: 1.7,
+    night: false,
+  },
+  arctic: {
+    id: 'arctic',
+    landBase: [210, 220, 230],
+    sandBase: [230, 235, 240],
+    waterColor: 0x1a4058,
+    concrete: 0xd0d8e0,
+    cliff: 0x8a9aaa,
+    fog: 0xc8d8e8,
+    fogDensity: 0.009,
+    bg: 0xa8c0d8,
+    hemiSky: 0xe8f4ff,
+    hemiGround: 0x607080,
+    sun: 0xf0f6ff,
+    sunIntensity: 1.25,
+    night: false,
+  },
+  night: {
+    id: 'night',
+    landBase: [28, 32, 40],
+    sandBase: [50, 48, 42],
+    waterColor: 0x0a2030,
+    concrete: 0x3a4450,
+    cliff: 0x2a3038,
+    fog: 0x101820,
+    fogDensity: 0.014,
+    bg: 0x0a1018,
+    hemiSky: 0x203048,
+    hemiGround: 0x101018,
+    sun: 0x8899bb,
+    sunIntensity: 0.55,
+    night: true,
+  },
+};
+
 /** East–west river through the mainland + north fork. Ships use this + ocean. */
 export function inRiver(x, z) {
   const centerZ = 4 + Math.sin(x * 0.08) * 1.4;
@@ -51,13 +118,22 @@ function shadow(mesh) {
   return mesh;
 }
 
-export function createMap(scene) {
+export function createMap(scene, mapId = 'ironfront') {
+  const themeKey = ({
+    ironfront: 'harbor',
+    dustfall: 'desert',
+    frostbite: 'arctic',
+    blacksite: 'night',
+  })[mapId] || 'harbor';
+  const theme = THEMES[themeKey];
+
   const group = new THREE.Group();
   scene.add(group);
 
   const panelNrm = makePanelNormalMap(256);
-  const landTex = makeTerrainTexture();
-  const sandTex = makeNoiseTexture(256, { base: [145, 125, 85], variance: 22 });
+  const landTex = makeNoiseTexture(512, { base: theme.landBase, variance: theme.night ? 18 : 22 });
+  landTex.repeat.set(8, 6);
+  const sandTex = makeNoiseTexture(256, { base: theme.sandBase, variance: 22 });
   sandTex.repeat.set(4, 4);
   const concreteTex = makeNoiseTexture(256, { base: [78, 84, 92], variance: 14, grid: true });
   concreteTex.repeat.set(2, 2);
@@ -70,36 +146,36 @@ export function createMap(scene) {
   const concreteMat = std({
     map: concreteTex,
     normalMap: panelNrm,
-    color: 0xc8d0da,
+    color: theme.concrete,
     metalness: 0.28,
     roughness: 0.58,
     envMapIntensity: 0.7,
   });
   const rustMat = std({ map: rustTex, color: 0xffffff, metalness: 0.55, roughness: 0.5, envMapIntensity: 0.8 });
-  const metalMat = std({ color: 0x6a7684, metalness: 0.88, roughness: 0.28, normalMap: panelNrm, envMapIntensity: 1.2 });
+  const metalMat = std({ color: theme.night ? 0x4a5564 : 0x6a7684, metalness: 0.88, roughness: 0.28, normalMap: panelNrm, envMapIntensity: 1.2 });
   const darkMetal = std({ color: 0x2a323c, metalness: 0.75, roughness: 0.4, envMapIntensity: 1 });
   const windowMat = std({
-    color: 0xa8e0ff,
-    emissive: 0x2a6a90,
-    emissiveIntensity: 0.55,
+    color: theme.night ? 0xffb070 : 0xa8e0ff,
+    emissive: theme.night ? 0xff6622 : 0x2a6a90,
+    emissiveIntensity: theme.night ? 1.1 : 0.55,
     metalness: 0.9,
     roughness: 0.12,
     envMapIntensity: 1.4,
   });
-  const asphaltMat = std({ map: asphaltTex, roughness: 0.85, metalness: 0.15, envMapIntensity: 0.4 });
+  const asphaltMat = std({ map: asphaltTex, roughness: 0.85, metalness: 0.15, envMapIntensity: 0.4, color: theme.night ? 0x888888 : 0xffffff });
   const foamMat = new THREE.MeshBasicMaterial({
-    color: 0xd8eef8,
+    color: theme.id === 'arctic' ? 0xffffff : 0xd8eef8,
     transparent: true,
-    opacity: 0.35,
+    opacity: theme.night ? 0.2 : 0.35,
     depthWrite: false,
   });
 
   // —— Ocean ——
   const waterMat = std({
     map: waterTex,
-    color: 0x2a7aa0,
+    color: theme.waterColor,
     metalness: 0.92,
-    roughness: 0.12,
+    roughness: theme.night ? 0.22 : 0.12,
     transparent: true,
     opacity: 0.94,
     envMapIntensity: 1.6,
@@ -130,7 +206,7 @@ export function createMap(scene) {
   buildRiver(group, { waterMat, sandMat, concreteMat, metalMat });
 
   // Beveled cliff faces
-  const cliffMat = std({ color: 0x4a5344, roughness: 0.9, metalness: 0.08, flat: true, envMapIntensity: 0.25 });
+  const cliffMat = std({ color: theme.cliff, roughness: 0.9, metalness: 0.08, flat: true, envMapIntensity: 0.25 });
   for (const [x, z, w, h, d, ry] of [
     [-38, -5, 4.5, 3.4, 22, 0.05],
     [28, -10, 3.5, 2.8, 18, -0.08],
@@ -326,7 +402,13 @@ export function createMap(scene) {
   }
 
   // Scrub / bush clusters
-  const bushMat = std({ color: 0x3a5a32, roughness: 0.9, metalness: 0.05, flat: true, envMapIntensity: 0.2 });
+  const bushMat = std({
+    color: theme.id === 'desert' ? 0x6a5a32 : theme.id === 'arctic' ? 0xc8d8e0 : theme.night ? 0x1a2a18 : 0x3a5a32,
+    roughness: 0.9,
+    metalness: 0.05,
+    flat: true,
+    envMapIntensity: 0.2,
+  });
   for (let i = 0; i < 28; i++) {
     const bx = -35 + Math.random() * 65;
     const bz = -30 + Math.random() * 50;
@@ -337,10 +419,71 @@ export function createMap(scene) {
     group.add(bush);
   }
 
+  // Theme accents — distinct silhouettes per theater
+  if (theme.id === 'arctic') {
+    for (const [x, z, s] of [[-20, 10, 2.2], [8, -12, 1.8], [22, 8, 2.5], [-8, 16, 1.6], [14, -22, 2.0], [-30, -8, 1.7]]) {
+      const berg = shadow(new THREE.Mesh(new THREE.ConeGeometry(s, s * 1.6, 6), sandMat));
+      berg.position.set(x, s * 0.5, z);
+      group.add(berg);
+    }
+    const iceSheet = new THREE.Mesh(
+      new THREE.CircleGeometry(18, 24),
+      new THREE.MeshStandardMaterial({
+        color: 0xe8f2fa,
+        transparent: true,
+        opacity: 0.35,
+        roughness: 0.2,
+        metalness: 0.15,
+      })
+    );
+    iceSheet.rotation.x = -Math.PI / 2;
+    iceSheet.position.set(-6, 1.05, -8);
+    group.add(iceSheet);
+  }
+  if (theme.night) {
+    for (const [x, z, hue] of [[-12, -8, 0xff3b7a], [6, 2, 0x3bffc8], [18, -16, 0xff3b7a], [-26, 6, 0x5aa0ff], [0, -20, 0xffaa33]]) {
+      const neon = new THREE.Mesh(
+        new THREE.BoxGeometry(2.8, 0.12, 0.12),
+        new THREE.MeshStandardMaterial({ color: hue, emissive: hue, emissiveIntensity: 2.2 })
+      );
+      neon.position.set(x, 3.4, z);
+      group.add(neon);
+      const glow = new THREE.PointLight(hue, 1.4, 18, 2);
+      glow.position.set(x, 3.6, z);
+      group.add(glow);
+    }
+  }
+  if (theme.id === 'desert') {
+    for (const [x, z, s] of [[-14, -18, 1.8], [10, 8, 2.4], [-28, -6, 1.5], [20, -14, 2.1], [-6, 12, 1.4]]) {
+      const dune = shadow(new THREE.Mesh(new THREE.SphereGeometry(s, 10, 8), sandMat));
+      dune.scale.set(1.6, 0.45, 1.2);
+      dune.position.set(x, 1.1, z);
+      group.add(dune);
+    }
+    const mesa = shadow(new THREE.Mesh(
+      new THREE.CylinderGeometry(3.2, 4.5, 3.5, 7),
+      cliffMat
+    ));
+    mesa.position.set(-32, 2.6, -22);
+    group.add(mesa);
+  }
+  if (theme.id === 'harbor') {
+    for (const [x, z] of [[-18, -24], [8, -26], [22, -18]]) {
+      const crate = shadow(new THREE.Mesh(
+        new THREE.BoxGeometry(1.4, 1.1, 1.4),
+        std({ color: 0xb07030, roughness: 0.75, metalness: 0.15 })
+      ));
+      crate.position.set(x, 1.55, z);
+      group.add(crate);
+    }
+  }
+
   return {
     group,
     sites,
     water,
+    mapId,
+    theme,
     colliders: covers.map(([x, y, z, w, h, d]) => ({
       min: new THREE.Vector3(x - w / 2, 0, z - d / 2),
       max: new THREE.Vector3(x + w / 2, h * 2, z + d / 2),
