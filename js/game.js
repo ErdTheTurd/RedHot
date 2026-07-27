@@ -9,7 +9,8 @@ import { createMap, getSpawns } from './map.js';
 import { updateBot } from './bots.js';
 import { SFX } from './audio.js';
 import {
-  createProjectileMesh, orientProjectile, spawnMuzzleFlash, spawnImpact, updateVfxList,
+  createProjectileMesh, orientProjectile, spawnMuzzleFlash, spawnImpact,
+  spawnExplosion, spawnSmokeCloud, spawnEmpBurst, updateVfxList,
 } from './vfx.js';
 
 export class Game {
@@ -42,7 +43,6 @@ export class Game {
     };
     this.running = false;
     this.buyOpen = false;
-    this._smokeClouds = [];
     this._beepAcc = 0;
     this.camDist = 14;
     this.camHeight = 8;
@@ -126,8 +126,18 @@ export class Game {
     this.timer = BUY_TIME;
     this.clearBomb();
     this.projectiles = [];
-    for (const c of this._smokeClouds) this.scene.remove(c);
-    this._smokeClouds = [];
+    // Clear lingering VFX from previous round
+    for (const fx of this.effects) {
+      if (fx.isMuzzle) {
+        this.scene.remove(fx.sprite);
+        if (fx.disc) this.scene.remove(fx.disc);
+        if (fx.light) this.scene.remove(fx.light);
+        for (const s of fx.sparks || []) this.scene.remove(s);
+      } else {
+        this.scene.remove(fx);
+      }
+    }
+    this.effects = [];
 
     const spawnsR = getSpawns('raiders');
     const spawnsS = getSpawns('sentinels');
@@ -520,27 +530,18 @@ export class Game {
   }
 
   deploySmoke(unit) {
-    const cloud = new THREE.Mesh(
-      new THREE.SphereGeometry(6, 16, 12),
-      new THREE.MeshStandardMaterial({
-        color: 0xb0c0c8,
-        transparent: true,
-        opacity: 0.55,
-        depthWrite: false,
-      })
-    );
     const ahead = unit.mesh.position.clone().add(
       new THREE.Vector3(Math.sin(unit.yaw), 0, Math.cos(unit.yaw)).multiplyScalar(10)
     );
-    ahead.y = 3;
-    cloud.position.copy(ahead);
-    cloud.userData.life = 10;
-    this.scene.add(cloud);
-    this._smokeClouds.push(cloud);
+    ahead.y = 2.5;
+    const cloud = spawnSmokeCloud(this.scene, ahead);
+    this.effects.push(cloud);
     this.ui.toast('Smoke barrage deployed');
   }
 
   deployEmp(unit) {
+    const origin = unit.mesh.position.clone().add(new THREE.Vector3(0, 1.5, 0));
+    this.effects.push(spawnEmpBurst(this.scene, origin));
     for (const u of this.units) {
       if (u.team === unit.team || !u.alive) continue;
       if (u.mesh.position.distanceTo(unit.mesh.position) < 28) {
@@ -552,8 +553,8 @@ export class Game {
   }
 
   spawnExplosion(pos) {
-    const impact = spawnImpact(this.scene, pos.clone().add(new THREE.Vector3(0, 1, 0)), true);
-    this.effects.push(impact);
+    const boom = spawnExplosion(this.scene, pos.clone().add(new THREE.Vector3(0, 1.1, 0)), 1.15);
+    this.effects.push(boom);
   }
 
   updateProjectiles(dt) {
@@ -712,18 +713,6 @@ export class Game {
     }
     this.updateProjectiles(dt);
     this.effects = updateVfxList(this.effects, dt, this.scene);
-
-    for (const c of this._smokeClouds) {
-      c.userData.life -= dt;
-      c.material.opacity = Math.max(0, Math.min(0.55, c.userData.life / 10));
-    }
-    this._smokeClouds = this._smokeClouds.filter((c) => {
-      if (c.userData.life <= 0) {
-        this.scene.remove(c);
-        return false;
-      }
-      return true;
-    });
 
     if (this.bomb.mesh) {
       this.bomb.mesh.rotation.y += dt * 2;

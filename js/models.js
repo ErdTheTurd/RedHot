@@ -27,6 +27,7 @@ function std(opts) {
     transparent: !!opts.transparent,
     opacity: opts.opacity ?? 1,
     side: opts.side ?? THREE.FrontSide,
+    envMapIntensity: opts.envMapIntensity ?? 1,
   });
 }
 
@@ -76,33 +77,36 @@ export function createVehicleMesh(def, teamColor, skin = null) {
     roughness: skin?.roughness ?? 0.38,
     emissive: skin?.emissive ?? 0x000000,
     emissiveIntensity: skin?.emissive ? 0.35 : 0,
+    envMapIntensity: 1.15,
   });
-  const darkMat = std({ color: 0x12161c, metalness: 0.82, roughness: 0.28, normalMap: nrm });
+  const darkMat = std({ color: 0x12161c, metalness: 0.85, roughness: 0.26, normalMap: nrm, envMapIntensity: 1.2 });
   const accentMat = std({
     color: teamColor,
     metalness: 0.4,
     roughness: 0.4,
     emissive: teamColor,
-    emissiveIntensity: 0.4,
+    emissiveIntensity: 0.45,
+    envMapIntensity: 0.9,
   });
-  const rubberMat = std({ color: 0x1a1a1a, metalness: 0.1, roughness: 0.85 });
+  const rubberMat = std({ color: 0x1a1a1a, metalness: 0.1, roughness: 0.88, envMapIntensity: 0.25 });
   const glassMat = std({
     color: 0x9fd4f0,
-    metalness: 0.95,
-    roughness: 0.05,
+    metalness: 0.98,
+    roughness: 0.04,
     transparent: true,
-    opacity: 0.42,
+    opacity: 0.4,
     emissive: 0x204860,
-    emissiveIntensity: 0.2,
+    emissiveIntensity: 0.25,
+    envMapIntensity: 1.8,
   });
   const lightMat = std({
     color: 0xffe8b0,
     emissive: 0xffaa33,
-    emissiveIntensity: 1.1,
+    emissiveIntensity: 1.25,
     metalness: 0.2,
     roughness: 0.35,
   });
-  const steelMat = std({ color: 0x6a7380, metalness: 0.9, roughness: 0.22 });
+  const steelMat = std({ color: 0x6a7380, metalness: 0.92, roughness: 0.18, envMapIntensity: 1.4 });
 
   if (def.domain === 'land') buildTank(body, { bodyMat, darkMat, accentMat, rubberMat, lightMat, steelMat });
   else if (def.domain === 'sea') buildShip(body, { bodyMat, darkMat, accentMat, glassMat, lightMat, steelMat });
@@ -269,6 +273,34 @@ function buildTank(body, mats) {
   const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.06, 0.28), accentMat);
   stripe.position.set(0, 1.15, 0.7);
   body.add(stripe);
+
+  // Track mudguards + side cages
+  for (const side of [-1, 1]) {
+    const guard = plate(0.5, 0.08, 3.6, darkMat, 0.02);
+    guard.rotation.x = Math.PI / 2;
+    guard.position.set(side * 1.25, 0.78, 0);
+    body.add(guard);
+  }
+
+  // Front tow hooks + rear fuel drums
+  for (const x of [-0.55, 0.55]) {
+    const hook = shadow(new THREE.Mesh(new THREE.TorusGeometry(0.08, 0.02, 6, 10), steelMat));
+    hook.position.set(x, 0.55, -2.05);
+    body.add(hook);
+  }
+  for (const x of [-0.7, 0.7]) {
+    const drum = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.55, 10), darkMat));
+    drum.rotation.z = Math.PI / 2;
+    drum.position.set(x, 1.05, 1.7);
+    body.add(drum);
+  }
+
+  // Side vision blocks
+  for (const x of [-0.95, 0.95]) {
+    const block = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.18, 0.35), darkMat));
+    block.position.set(x, 1.55, -0.35);
+    body.add(block);
+  }
 }
 
 function buildShip(body, mats) {
@@ -370,6 +402,41 @@ function buildShip(body, mats) {
   const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.14, 3.4), accentMat);
   stripe.position.set(0.95, 0.75, 0);
   body.add(stripe);
+
+  // Keel / sonar dome
+  const keel = shadow(new THREE.Mesh(new THREE.SphereGeometry(0.45, 12, 10), darkMat));
+  keel.scale.set(1, 0.55, 1.4);
+  keel.position.set(0, 0.15, -0.8);
+  body.add(keel);
+
+  // Helipad aft
+  const pad = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 0.06, 20), darkMat));
+  pad.position.set(0, 1.08, 1.85);
+  body.add(pad);
+  const hMark = new THREE.Mesh(
+    new THREE.RingGeometry(0.25, 0.45, 16),
+    new THREE.MeshBasicMaterial({ color: teamColorFrom(accentMat) })
+  );
+  hMark.rotation.x = -Math.PI / 2;
+  hMark.position.set(0, 1.12, 1.85);
+  body.add(hMark);
+
+  // Life raft canisters
+  for (const x of [-0.85, 0.85]) {
+    const raft = shadow(new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.55, 4, 8), accentMat));
+    raft.rotation.z = Math.PI / 2;
+    raft.position.set(x, 1.25, 0.2);
+    body.add(raft);
+  }
+
+  // Anchor hawse
+  const hawse = shadow(new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.03, 6, 12), steelMat));
+  hawse.position.set(0, 0.7, -3.35);
+  body.add(hawse);
+}
+
+function teamColorFrom(mat) {
+  return mat.color?.getHex?.() ?? 0xffffff;
 }
 
 function buildJet(body, mats) {
@@ -485,4 +552,36 @@ function buildJet(body, mats) {
   stripe.position.set(0, 0.9, 0.1);
   body.add(stripe);
 
+  // Landing gear doors / ventral scoop
+  const scoop = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.12, 0.9), darkMat));
+  scoop.position.set(0, 0.28, 0.1);
+  body.add(scoop);
+
+  // Chaff / flare dispensers
+  for (const x of [-0.5, 0.5]) {
+    const box = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.12, 0.35), darkMat));
+    box.position.set(x, 0.35, 1.1);
+    body.add(box);
+  }
+
+  // Afterburner petals
+  for (const x of [-0.28, 0.28]) {
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const petal = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.12, 0.18), steelMat));
+      petal.position.set(
+        x + Math.cos(a) * 0.2,
+        0.5 + Math.sin(a) * 0.2,
+        2.15
+      );
+      body.add(petal);
+    }
+  }
+
+  // Wing fences
+  for (const side of [-1, 1]) {
+    const fence = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.22, 0.7), darkMat));
+    fence.position.set(side * 1.1, 0.62, 0.15);
+    body.add(fence);
+  }
 }
