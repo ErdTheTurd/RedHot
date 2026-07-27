@@ -114,25 +114,27 @@ export class Game {
     const spawnsS = getSpawns('sentinels');
     const groundY = (x, z) => this.map.groundHeight(x, z);
 
+    const fleet = (this.inventory?.matchLoadout?.() || [])
+      .filter((id) => id && (!this.inventory || this.inventory.ownsVehicle(id)));
+    const primary = fleet[0] || 'scout_tracker';
     this.player = new Unit({
       id: 'player',
       name: this.mode.freeRoam ? 'Vigilante' : 'You',
       team,
       isPlayer: true,
       spawn: team === TEAMS.RAIDERS ? spawnsR[0] : spawnsS[0],
-      vehicleId: this.inventory?.matchLoadout?.()[0] || (this.mode.freeRoam ? 'raptor_strike' : 'scout_tracker'),
+      vehicleId: primary,
       getSkin: (vid) => this.inventory?.getEquipped(vid) || null,
       getGroundY: groundY,
     });
-    // Prefer equipped fleet: land / sea / air in slots 1–3 when owned
-    const fleet = this.inventory?.matchLoadout?.() || ['scout_tracker', 'coastal_skiff', 'wasp_drone'];
+    // Equipped fleet only — never put locked craft in loadout slots
     this.player.loadout = [
-      fleet[0] || 'scout_tracker',
+      fleet[0] || primary,
       fleet[1] || null,
       fleet[2] || null,
     ];
     this.player.activeSlot = 0;
-    this.player._ensureAmmo?.(fleet[0]);
+    this.player._ensureAmmo?.(primary);
     this.player._swapMesh?.();
     this.player._refillOrdnance?.();
     this.player.money = this.mode.freeRoam ? MAX_MONEY : START_MONEY;
@@ -486,8 +488,8 @@ export class Game {
     const p = this.player;
     const v = VEHICLES[id];
     if (!v || !p) return;
-    if (this.inventory && !this.inventory.ownsVehicle(id)) {
-      this.ui.toast('Unlock this craft from a fleet case first');
+    if (!this.inventory?.ownsVehicle(id)) {
+      this.ui.toast('Only crate-unlocked craft can be used');
       return;
     }
     if (p.loadout.includes(id)) {
@@ -517,7 +519,7 @@ export class Game {
     this.placeDomainVehicle(p);
     SFX.buy();
     this.ui.renderBuy();
-    this.ui.toast(`Purchased ${v.name}`);
+    this.ui.toast(`Deployed ${v.name}`);
   }
 
   /** Put sea craft into water / jets into air so they aren't stuck underground. */
@@ -1180,9 +1182,21 @@ export class Game {
       if (this.buyOpen) this.closeBuyMenu();
       else this.openBuyMenu();
     }
-    if (e.code === 'Digit1') { this.player?.switchSlot(0); this.placeDomainVehicle(this.player); }
-    if (e.code === 'Digit2') { this.player?.switchSlot(1); this.placeDomainVehicle(this.player); }
-    if (e.code === 'Digit3') { this.player?.switchSlot(2); this.placeDomainVehicle(this.player); }
+    if (e.code === 'Digit1') {
+      if (this.player?.loadout[0] && (!this.inventory || this.inventory.ownsVehicle(this.player.loadout[0]))) {
+        this.player.switchSlot(0); this.placeDomainVehicle(this.player);
+      }
+    }
+    if (e.code === 'Digit2') {
+      if (this.player?.loadout[1] && (!this.inventory || this.inventory.ownsVehicle(this.player.loadout[1]))) {
+        this.player.switchSlot(1); this.placeDomainVehicle(this.player);
+      }
+    }
+    if (e.code === 'Digit3') {
+      if (this.player?.loadout[2] && (!this.inventory || this.inventory.ownsVehicle(this.player.loadout[2]))) {
+        this.player.switchSlot(2); this.placeDomainVehicle(this.player);
+      }
+    }
     if (e.code === 'Escape' && this.buyOpen) this.closeBuyMenu();
   }
 }
