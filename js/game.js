@@ -354,32 +354,14 @@ export class Game {
 
   moveUnit(unit, next) {
     const def = unit.vehicle;
-    const water = this.map.isWater(next.x, next.z);
-    const cur = unit.mesh.position;
+    const water = this.map.isWater(next.x, next.z, def.domain);
 
+    // Land craft stay dry; ships stay in ocean/river only (no land shortcuts)
     if (def.domain === 'land' && water) {
       return;
     }
     if (def.domain === 'sea' && !water) {
-      // Ships crawl on land but keep steering toward open water so they aren't stuck
-      const dx = next.x - cur.x;
-      const dz = next.z - cur.z;
-      const sea = this.map.nearestWater?.(cur.x, cur.z);
-      if (sea) {
-        const toSea = new THREE.Vector3(sea.x - cur.x, 0, sea.z - cur.z);
-        if (toSea.lengthSq() > 0.01) {
-          toSea.normalize();
-          // Blend intended move with pull toward water
-          next.x = cur.x + dx * 0.55 + toSea.x * Math.hypot(dx, dz) * 0.65;
-          next.z = cur.z + dz * 0.55 + toSea.z * Math.hypot(dx, dz) * 0.65;
-        } else {
-          next.x = cur.x + dx * 0.55;
-          next.z = cur.z + dz * 0.55;
-        }
-      } else {
-        next.x = cur.x + dx * 0.55;
-        next.z = cur.z + dz * 0.55;
-      }
+      return;
     }
 
     for (const c of this.map.colliders) {
@@ -491,10 +473,18 @@ export class Game {
     const forward = new THREE.Vector3(Math.sin(p.yaw), 0, Math.cos(p.yaw));
     const right = new THREE.Vector3(Math.cos(p.yaw), 0, -Math.sin(p.yaw));
     const move = new THREE.Vector3();
-    if (this.input.pressedAny('KeyW', 'ArrowUp')) move.add(forward);
-    if (this.input.pressedAny('KeyS', 'ArrowDown')) move.sub(forward);
-    if (this.input.pressedAny('KeyA', 'ArrowLeft')) move.sub(right);
-    if (this.input.pressedAny('KeyD', 'ArrowRight')) move.add(right);
+    const axis = this.input.moveAxis ? this.input.moveAxis() : null;
+    if (axis) {
+      if (axis.z > 0) move.add(forward);
+      if (axis.z < 0) move.sub(forward);
+      if (axis.x < 0) move.sub(right);
+      if (axis.x > 0) move.add(right);
+    } else {
+      if (this.input.pressedAny('KeyW', 'ArrowUp')) move.add(forward);
+      if (this.input.pressedAny('KeyS', 'ArrowDown')) move.sub(forward);
+      if (this.input.pressedAny('KeyA', 'ArrowLeft')) move.sub(right);
+      if (this.input.pressedAny('KeyD', 'ArrowRight')) move.add(right);
+    }
     if (move.lengthSq() > 0) {
       move.normalize().multiplyScalar(speed * dt);
       this.moveUnit(p, p.mesh.position.clone().add(move));
