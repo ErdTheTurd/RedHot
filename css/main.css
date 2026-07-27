@@ -586,6 +586,7 @@ html, body {
 .buy-shell {
   width: min(1100px, 96vw);
   height: min(720px, 90vh);
+  max-height: calc(100dvh - 2rem);
   background: var(--panel);
   border: 1px solid var(--line);
   display: grid;
