@@ -830,8 +830,8 @@ function scatterProps(group, mats) {
   for (const [x, z] of [[-27, 20], [29, 16], [-18, -12], [15, 4]]) {
     for (let row = 0; row < 3; row++) {
       for (let col = 0; col < 4 - row; col++) {
-        const bag = shadow(new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 0.55, 4, 8), sandMat));
-        bag.rotation.z = Math.PI / 2;
+        const bag = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.28, 0.32), sandMat));
+        bag.rotation.y = (col + row) * 0.08;
         bag.position.set(x + col * 0.5 + row * 0.15, 1.15 + row * 0.35, z);
         group.add(bag);
       }
