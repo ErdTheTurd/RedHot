@@ -425,7 +425,7 @@ export class Game {
     const p = this.player;
     if (!p || !p.alive) return;
 
-    if (this.buyOpen) return;
+    if (this.buyOpen || this.input.cmdMode) return;
 
     const { dx, dy } = this.input.consumeMouseDelta();
     const sens = 0.0022;
@@ -440,17 +440,26 @@ export class Game {
     const forward = new THREE.Vector3(Math.sin(p.yaw), 0, Math.cos(p.yaw));
     const right = new THREE.Vector3(Math.cos(p.yaw), 0, -Math.sin(p.yaw));
     const move = new THREE.Vector3();
-    if (this.input.pressed('KeyW')) move.add(forward);
-    if (this.input.pressed('KeyS')) move.sub(forward);
-    if (this.input.pressed('KeyA')) move.sub(right);
-    if (this.input.pressed('KeyD')) move.add(right);
+    if (this.input.pressedAny('KeyW', 'ArrowUp')) move.add(forward);
+    if (this.input.pressedAny('KeyS', 'ArrowDown')) move.sub(forward);
+    if (this.input.pressedAny('KeyA', 'ArrowLeft')) move.sub(right);
+    if (this.input.pressedAny('KeyD', 'ArrowRight')) move.add(right);
     if (move.lengthSq() > 0) {
       move.normalize().multiplyScalar(speed * dt);
       this.moveUnit(p, p.mesh.position.clone().add(move));
     }
-    p._adjustHeight();
 
-    if (this.input.mouse.down) this.tryFire(p);
+    // Jump (Space) — costs 5 rounds
+    if (this.input.consumePress('Space')) {
+      const res = p.tryJump();
+      if (res.ok) this.ui.toast('Jump −5 ammo');
+      else if (res.reason) this.ui.toast(res.reason, 900);
+    }
+    p.updateJump(dt);
+    if (p.grounded) p._adjustHeight();
+
+    // Shoot with F (hold to fire)
+    if (this.input.pressed('KeyF')) this.tryFire(p);
     if (this.input.pressed('KeyR')) this.startReload(p);
 
     // plant / defuse
@@ -477,17 +486,37 @@ export class Game {
       p.defuseProgress = 0;
     }
 
-    // utilities
-    if (this.input.pressed('KeyG') && p.hasSmoke > 0) {
+    // utilities — EMP moved to V (F is shoot)
+    if (this.input.consumePress('KeyG') && p.hasSmoke > 0) {
       p.hasSmoke -= 1;
       this.deploySmoke(p);
-      this.input.keys.KeyG = false;
     }
-    if (this.input.pressed('KeyF') && p.hasEmp > 0) {
+    if (this.input.consumePress('KeyV') && p.hasEmp > 0) {
       p.hasEmp -= 1;
       this.deployEmp(p);
-      this.input.keys.KeyF = false;
     }
+  }
+
+  /** Slash commands (invisible — type /give-credits then Enter). */
+  handleCommand(line) {
+    const raw = String(line || '').trim();
+    if (!raw) return;
+    const parts = raw.split(/\s+/);
+    const cmd = parts[0].toLowerCase();
+
+    if (cmd === '/give-credits' || cmd === '/givecredits') {
+      const amount = Math.max(1, parseInt(parts[1], 10) || 10000);
+      this.inventory?.addWallet(amount);
+      if (this.player) {
+        this.player.money = Math.min(MAX_MONEY, this.player.money + amount);
+      }
+      this.ui.refreshMeta?.();
+      this.ui.toast(`+${amount} credits (bank + match)`);
+      SFX.buy();
+      return;
+    }
+
+    this.ui.toast(`Unknown command: ${cmd}`);
   }
 
   deploySmoke(unit) {

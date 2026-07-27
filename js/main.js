@@ -77,6 +77,11 @@ const ui = createUI({
 const game = new Game({ scene, camera, input, ui, inventory });
 gameRef.game = game;
 
+input.onCommand((line) => {
+  game.handleCommand(line);
+  if (game.running && !game.buyOpen) input.requestLock();
+});
+
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
