@@ -9,12 +9,28 @@ function blank() {
   for (const id of Object.keys(SKINS)) {
     if (SKINS[id].isDefault) equipped[SKINS[id].vehicleId] = id;
   }
+  // Starter drip so inventory isn't a wall of Stock paints
+  const starterIds = [
+    'siege_titan__crimson_wake',
+    'raptor_strike__neon_circuit',
+    'battleship_kronos__jade_current',
+    'mbt_anvil__void_carbon',
+    'falcon_interceptor__solar_flare',
+    'destroyer_hull__dragon_scale',
+  ].filter((id) => SKINS[id]);
+  const skins = {};
+  for (const id of starterIds) skins[id] = 1;
+  // Auto-equip the cool starters where available
+  for (const id of starterIds) {
+    const s = SKINS[id];
+    if (s) equipped[s.vehicleId] = id;
+  }
   return {
     wallet: 3500,
     cases: { ironfront_case: 1 },
     keys: { ironfront_key: 1 },
-    skins: {}, // skinId -> count
-    equipped, // vehicleId -> skinId
+    skins,
+    equipped,
     stats: { matches: 0, wins: 0, opens: 0 },
   };
 }
@@ -25,13 +41,24 @@ export function loadInventory() {
     if (!raw) return blank();
     const data = JSON.parse(raw);
     const base = blank();
+    const skins = { ...(data.skins || {}) };
+    // Legacy saves with zero drops get the starter drip once
+    if (!Object.keys(skins).length) {
+      for (const [id, n] of Object.entries(base.skins)) skins[id] = n;
+    }
+    const equipped = { ...base.equipped, ...(data.equipped || {}) };
+    if (!Object.keys(data.skins || {}).length) {
+      for (const [vid, sid] of Object.entries(base.equipped)) {
+        if (base.skins[sid]) equipped[vid] = sid;
+      }
+    }
     return {
       ...base,
       ...data,
       cases: { ...base.cases, ...(data.cases || {}) },
       keys: { ...base.keys, ...(data.keys || {}) },
-      skins: { ...(data.skins || {}) },
-      equipped: { ...base.equipped, ...(data.equipped || {}) },
+      skins,
+      equipped,
       stats: { ...base.stats, ...(data.stats || {}) },
     };
   } catch {

@@ -155,26 +155,22 @@ export function createUI(game, inventory) {
 
     if (invTab === 'skins') {
       const owned = inventory.ownedSkins();
-      // Always show factory defaults as equippable
-      const defaults = Object.values(SKINS).filter((s) => s.isDefault);
-      const list = [
-        ...defaults.map((s) => ({ skin: s, count: 1, isDefault: true })),
-        ...owned,
-      ];
-      if (!owned.length) {
-        // still show defaults
-      }
+      // Cool drops first; stock paints tucked at the end for reset-to-default
+      const defaults = Object.values(SKINS)
+        .filter((s) => s.isDefault)
+        .map((s) => ({ skin: s, count: 1, isDefault: true }));
+      const list = [...owned, ...defaults];
       for (const row of list) {
         const s = row.skin;
         const equipped = inventory.getEquipped(s.vehicleId)?.id === s.id;
         const el = document.createElement('button');
-        el.className = `inv-item${selectedInv === s.id ? ' selected' : ''}${equipped ? ' equipped' : ''}`;
-        el.style.borderColor = rarityColor(s.rarity);
+        el.className = `inv-item${selectedInv === s.id ? ' selected' : ''}${equipped ? ' equipped' : ''}${row.isDefault ? ' is-stock' : ''}`;
+        el.style.setProperty('--rarity', rarityColor(s.rarity));
         el.innerHTML = `
           <img class="inv-swatch" src="${skinImg(s)}" alt="${s.name}" width="256" height="256" loading="lazy" />
           <strong>${s.shortName}</strong>
           <span>${VEHICLES[s.vehicleId]?.name || ''} · ${RARITY[s.rarity]?.label || ''}</span>
-          <em>${row.isDefault ? 'DEFAULT' : `x${row.count}`}${equipped ? ' · EQUIPPED' : ''}</em>
+          <em>${row.isDefault ? 'STOCK' : `x${row.count}`}${equipped ? ' · EQUIPPED' : ''}</em>
         `;
         el.onclick = () => {
           selectedInv = s.id;
@@ -357,7 +353,7 @@ export function createUI(game, inventory) {
       const sw = $('crate-swatch');
       sw.style.background = 'transparent';
       sw.style.boxShadow = `0 0 40px ${rarityColor(skin.rarity)}`;
-      sw.innerHTML = `<img src="${skinImg(skin)}" alt="${skin.name}" style="width:100%;height:100%;object-fit:contain" />`;
+      sw.innerHTML = `<img src="${skinImg(skin)}" alt="${skin.name}" style="width:100%;height:100%;object-fit:cover" />`;
       $('crate-result').classList.remove('hidden');
       reelSpinning = false;
       refreshMeta();

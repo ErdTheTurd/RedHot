@@ -277,29 +277,40 @@ function drawTank(ctx, cx, cy, scale, skinTexCanvas) {
   ctx.translate(cx, cy);
   ctx.scale(scale, scale);
   // tracks
-  ctx.fillStyle = '#1a1f24';
-  roundRect(ctx, -54, 6, 18, 40, 4); ctx.fill();
-  roundRect(ctx, 36, 6, 18, 40, 4); ctx.fill();
+  ctx.fillStyle = '#0d1116';
+  roundRect(ctx, -58, 8, 20, 44, 4); ctx.fill();
+  roundRect(ctx, 38, 8, 20, 44, 4); ctx.fill();
+  ctx.fillStyle = '#1a222c';
+  for (let i = 0; i < 5; i++) {
+    ctx.fillRect(-54, 12 + i * 8, 12, 3);
+    ctx.fillRect(42, 12 + i * 8, 12, 3);
+  }
   // hull with pattern clipped
   ctx.save();
-  roundRect(ctx, -42, -12, 84, 44, 6);
+  roundRect(ctx, -46, -14, 92, 48, 7);
   ctx.clip();
-  ctx.drawImage(skinTexCanvas, -42, -12, 84, 44);
+  ctx.drawImage(skinTexCanvas, -46, -14, 92, 48);
   ctx.restore();
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+  ctx.lineWidth = 2;
+  roundRect(ctx, -46, -14, 92, 48, 7);
+  ctx.stroke();
   // turret
   ctx.save();
   ctx.beginPath();
-  ctx.ellipse(0, -8, 24, 17, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, -10, 28, 20, 0, 0, Math.PI * 2);
   ctx.clip();
-  ctx.drawImage(skinTexCanvas, -24, -25, 48, 34);
+  ctx.drawImage(skinTexCanvas, -28, -30, 56, 40);
   ctx.restore();
-  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
   ctx.beginPath();
-  ctx.ellipse(0, -8, 24, 17, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, -10, 28, 20, 0, 0, Math.PI * 2);
   ctx.stroke();
   // barrel
-  ctx.fillStyle = '#151a20';
-  roundRect(ctx, -7, -52, 14, 42, 3); ctx.fill();
+  ctx.fillStyle = '#0d1116';
+  roundRect(ctx, -8, -58, 16, 48, 3); ctx.fill();
+  ctx.fillStyle = shade('#0d1116', 30);
+  roundRect(ctx, -6, -58, 12, 8, 2); ctx.fill();
   ctx.restore();
 }
 
@@ -308,20 +319,23 @@ function drawShip(ctx, cx, cy, scale, skinTexCanvas) {
   ctx.translate(cx, cy);
   ctx.scale(scale, scale);
   ctx.beginPath();
-  ctx.moveTo(0, -48);
-  ctx.lineTo(30, 12);
-  ctx.lineTo(22, 36);
-  ctx.lineTo(-22, 36);
-  ctx.lineTo(-30, 12);
+  ctx.moveTo(0, -54);
+  ctx.lineTo(34, 10);
+  ctx.lineTo(24, 42);
+  ctx.lineTo(-24, 42);
+  ctx.lineTo(-34, 10);
   ctx.closePath();
   ctx.save();
   ctx.clip();
-  ctx.drawImage(skinTexCanvas, -32, -48, 64, 88);
+  ctx.drawImage(skinTexCanvas, -36, -54, 72, 100);
   ctx.restore();
-  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+  ctx.lineWidth = 2;
   ctx.stroke();
-  ctx.fillStyle = '#151a20';
-  roundRect(ctx, -12, -6, 24, 22, 3); ctx.fill();
+  ctx.fillStyle = '#0d1116';
+  roundRect(ctx, -14, -8, 28, 26, 3); ctx.fill();
+  ctx.fillStyle = 'rgba(160,210,255,0.35)';
+  roundRect(ctx, -8, -2, 16, 10, 2); ctx.fill();
   ctx.restore();
 }
 
@@ -331,115 +345,157 @@ function drawJet(ctx, cx, cy, scale, skinTexCanvas) {
   ctx.scale(scale, scale);
   // wings
   ctx.beginPath();
-  ctx.moveTo(-60, 12);
-  ctx.lineTo(0, -8);
-  ctx.lineTo(60, 12);
-  ctx.lineTo(42, 24);
-  ctx.lineTo(0, 12);
-  ctx.lineTo(-42, 24);
+  ctx.moveTo(-68, 14);
+  ctx.lineTo(0, -10);
+  ctx.lineTo(68, 14);
+  ctx.lineTo(48, 28);
+  ctx.lineTo(0, 14);
+  ctx.lineTo(-48, 28);
   ctx.closePath();
   ctx.save();
   ctx.clip();
-  ctx.drawImage(skinTexCanvas, -60, -8, 120, 36);
+  ctx.drawImage(skinTexCanvas, -68, -10, 136, 42);
   ctx.restore();
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
   // fuselage
   ctx.beginPath();
-  ctx.moveTo(0, -46);
-  ctx.quadraticCurveTo(14, -10, 11, 30);
-  ctx.lineTo(-11, 30);
-  ctx.quadraticCurveTo(-14, -10, 0, -46);
+  ctx.moveTo(0, -52);
+  ctx.quadraticCurveTo(16, -10, 12, 34);
+  ctx.lineTo(-12, 34);
+  ctx.quadraticCurveTo(-16, -10, 0, -52);
   ctx.closePath();
   ctx.save();
   ctx.clip();
-  ctx.drawImage(skinTexCanvas, -14, -46, 28, 80);
+  ctx.drawImage(skinTexCanvas, -16, -52, 32, 90);
   ctx.restore();
-  ctx.fillStyle = 'rgba(160,210,255,0.55)';
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(160,210,255,0.6)';
   ctx.beginPath();
-  ctx.ellipse(0, -14, 7, 12, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, -16, 8, 14, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = '#151a20';
+  ctx.fillStyle = '#0d1116';
   ctx.beginPath();
-  ctx.moveTo(-2, 18);
-  ctx.lineTo(-2, 38);
-  ctx.lineTo(14, 30);
+  ctx.moveTo(-3, 20);
+  ctx.lineTo(-3, 42);
+  ctx.lineTo(16, 32);
   ctx.closePath();
+  ctx.fill();
+  // afterburner glow
+  ctx.fillStyle = 'rgba(80,180,255,0.55)';
+  ctx.beginPath();
+  ctx.ellipse(0, 36, 6, 4, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 }
 
 /**
- * Full inventory / shop preview: patterned vehicle on dark card.
+ * Full-bleed CS-style skin tile: pattern fills the square edge-to-edge,
+ * with a huge vehicle silhouette cut from the same finish.
  */
 export function skinImageDataUrl(skin, domain = 'land', size = 256) {
-  const key = `prev:${skin.id}|${domain}|${size}`;
+  const key = `prev2:${skin.id}|${domain}|${size}`;
   if (previewCache.has(key)) return previewCache.get(key);
 
-  // pattern source
+  const patSize = Math.max(512, size * 2);
   const pat = document.createElement('canvas');
-  pat.width = pat.height = 256;
-  paintPattern(pat.getContext('2d'), 256, 256, skin);
+  pat.width = pat.height = patSize;
+  paintPattern(pat.getContext('2d'), patSize, patSize, skin);
 
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext('2d');
-
   const accent = rarityHex(skin.rarity);
+  const seed = (skin.id || '').length + (skin.color | 0);
 
-  // backdrop
-  const bg = ctx.createRadialGradient(size * 0.35, size * 0.28, 8, size * 0.5, size * 0.55, size * 0.75);
-  bg.addColorStop(0, shade(skin.color, 20));
-  bg.addColorStop(0.45, '#141a22');
-  bg.addColorStop(1, '#070b10');
-  ctx.fillStyle = bg;
+  // Edge-to-edge finish — the square IS the skin
+  ctx.drawImage(pat, 0, 0, size, size);
+
+  // Depth vignette so the silhouette reads
+  const vig = ctx.createRadialGradient(size * 0.5, size * 0.45, size * 0.15, size * 0.5, size * 0.55, size * 0.78);
+  vig.addColorStop(0, 'rgba(0,0,0,0)');
+  vig.addColorStop(0.55, 'rgba(0,0,0,0.12)');
+  vig.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = vig;
   ctx.fillRect(0, 0, size, size);
 
-  // faint full-bleed pattern watermark
-  ctx.globalAlpha = 0.18;
-  ctx.drawImage(pat, 0, 0, size, size);
-  ctx.globalAlpha = 1;
-
-  // rarity frame
-  ctx.strokeStyle = accent;
-  ctx.lineWidth = Math.max(3, size * 0.025);
-  ctx.strokeRect(size * 0.035, size * 0.035, size * 0.93, size * 0.93);
-  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(size * 0.05, size * 0.05, size * 0.9, size * 0.9);
-
+  // Giant patterned vehicle filling most of the tile
   const cx = size / 2;
-  const cy = size * 0.48;
-  const scale = size / 210;
+  const cy = size * 0.5;
+  const scale = size / 105;
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.55)';
+  ctx.shadowBlur = size * 0.08;
+  ctx.shadowOffsetY = size * 0.02;
   if (domain === 'sea') drawShip(ctx, cx, cy, scale, pat);
   else if (domain === 'air') drawJet(ctx, cx, cy, scale, pat);
   else drawTank(ctx, cx, cy, scale, pat);
-
-  // pattern swatch strip so finish is obvious
-  const swY = size * 0.72;
-  const swH = size * 0.08;
-  ctx.save();
-  roundRect(ctx, size * 0.12, swY, size * 0.76, swH, 4);
-  ctx.clip();
-  ctx.drawImage(pat, size * 0.12, swY, size * 0.76, swH);
   ctx.restore();
-  ctx.strokeStyle = 'rgba(255,255,255,0.2)';
-  roundRect(ctx, size * 0.12, swY, size * 0.76, swH, 4);
-  ctx.stroke();
 
-  // label
-  ctx.fillStyle = 'rgba(0,0,0,0.62)';
-  ctx.fillRect(0, size * 0.82, size, size * 0.18);
+  // Specular slash across the finish
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const slash = ctx.createLinearGradient(0, 0, size, size);
+  slash.addColorStop(0, 'rgba(255,255,255,0)');
+  slash.addColorStop(0.42, 'rgba(255,255,255,0)');
+  slash.addColorStop(0.5, 'rgba(255,255,255,0.22)');
+  slash.addColorStop(0.58, 'rgba(255,255,255,0)');
+  slash.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = slash;
+  ctx.fillRect(0, 0, size, size);
+  ctx.restore();
+
+  // High-tier emissive bloom
+  const glowTiers = { restricted: 0.12, classified: 0.18, covert: 0.24, extraordinary: 0.32 };
+  const glowA = glowTiers[skin.rarity] || 0;
+  if (glowA > 0) {
+    const bloom = ctx.createRadialGradient(size * 0.5, size * 0.5, size * 0.1, size * 0.5, size * 0.5, size * 0.65);
+    bloom.addColorStop(0, hexToRgba(accent, glowA));
+    bloom.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = bloom;
+    ctx.globalCompositeOperation = 'screen';
+    ctx.fillRect(0, 0, size, size);
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  // Micro scuffs for lower grades / stock
+  if (skin.isDefault || skin.rarity === 'consumer' || skin.rarity === 'industrial') {
+    ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 10; i++) {
+      const x = hash(seed + i * 17) * size;
+      const y = hash(seed + i * 29) * size;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + 8 + hash(i) * 18, y + (hash(i + 3) - 0.5) * 10);
+      ctx.stroke();
+    }
+  }
+
+  // Rarity edge rail (CS inventory accent)
+  const rail = Math.max(4, Math.floor(size * 0.045));
   ctx.fillStyle = accent;
-  ctx.font = `700 ${Math.floor(size * 0.065)}px "Barlow Condensed", sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.fillText((skin.shortName || 'Skin').toUpperCase(), size / 2, size * 0.915);
-  ctx.fillStyle = 'rgba(215,228,236,0.55)';
-  ctx.font = `600 ${Math.floor(size * 0.04)}px "IBM Plex Sans", sans-serif`;
-  ctx.fillText((skin.pattern || 'solid').toUpperCase(), size / 2, size * 0.965);
+  ctx.fillRect(0, size - rail, size, rail);
+  // soft inner highlight on top edge
+  const topG = ctx.createLinearGradient(0, 0, 0, size * 0.18);
+  topG.addColorStop(0, 'rgba(255,255,255,0.22)');
+  topG.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = topG;
+  ctx.fillRect(0, 0, size, size * 0.18);
+
+  // Thin outer frame
+  ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0.5, 0.5, size - 1, size - 1);
 
   const url = canvas.toDataURL('image/png');
   previewCache.set(key, url);
   return url;
 }
 
-// silence unused
-void rgb;
+function hexToRgba(hex, a) {
+  const [r, g, b] = rgb(hex);
+  return `rgba(${r},${g},${b},${a})`;
+}

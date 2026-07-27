@@ -56,8 +56,8 @@ function buildSkins() {
     skins[id] = {
       id,
       vehicleId: v.id,
-      name: `${v.name} | Factory New`,
-      shortName: 'Factory New',
+      name: `${v.name} | Stock`,
+      shortName: 'Stock',
       rarity: 'consumer',
       color: v.color,
       secondary: (v.color >> 1) & 0x7f7f7f,
