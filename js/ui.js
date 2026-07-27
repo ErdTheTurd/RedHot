@@ -190,6 +190,7 @@ export function createUI(game, inventory) {
           <h3>${s.name}</h3>
           <img class="inv-swatch-lg" src="${skinImg(s)}" alt="${s.name}" width="256" height="256" />
           <div class="stat-row"><span>Vehicle</span><strong>${VEHICLES[s.vehicleId]?.name}</strong></div>
+          <div class="stat-row"><span>Pattern</span><strong>${(s.pattern || 'solid').toUpperCase()}</strong></div>
           <div class="stat-row"><span>Sell value</span><strong>${formatMoney(s.sellPrice)}</strong></div>
           <button class="btn btn-primary" style="width:100%;margin-top:1rem" id="btn-equip-skin">EQUIP</button>
           ${s.isDefault ? '' : '<button class="btn btn-ghost" style="width:100%;margin-top:0.5rem" id="btn-sell-skin">SELL TO ARMORY</button>'}
