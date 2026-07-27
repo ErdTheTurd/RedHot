@@ -406,8 +406,8 @@ export function vehicleImageDataUrl(vehicle, skin = null, size = 256) {
   ctx.beginPath();
   if (domain === 'land') {
     // hull
-    ctx.roundRect?.(cx - size * 0.32, cy - size * 0.08, size * 0.64, size * 0.22, 6);
-    if (!ctx.roundRect) ctx.rect(cx - size * 0.32, cy - size * 0.08, size * 0.64, size * 0.22);
+    ctx.beginPath();
+    ctx.rect(cx - size * 0.32, cy - size * 0.08, size * 0.64, size * 0.22);
     ctx.fill();
     // turret / plow / fang accents
     ctx.beginPath();

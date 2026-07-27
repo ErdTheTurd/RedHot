@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="description" content="Vehicle Strike — 3D tactical combat with tanks, jets, ships, crates, keys, and skins." />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <title>VEHICLE STRIKE — Tactical Warfare</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -19,6 +20,22 @@
   </script>
 </head>
 <body>
+  <div id="boot-splash" class="boot-splash" aria-live="polite">
+    <p class="brand-mark brand-mark-sm">VEHICLE STRIKE</p>
+    <p>Loading battlefield…</p>
+  </div>
+  <div id="boot-error" class="boot-error hidden" role="alert">
+    <p class="brand-mark brand-mark-sm">VEHICLE STRIKE</p>
+    <h2>Couldn’t start</h2>
+    <p id="boot-error-msg">This browser couldn’t run the 3D engine.</p>
+    <ul class="boot-error-tips">
+      <li>Use the latest Chrome, Edge, Firefox, or Safari.</li>
+      <li>Turn on hardware acceleration in browser settings.</li>
+      <li>Disable strict tracking blockers for this site (Three.js loads from a CDN).</li>
+      <li>Try another device if WebGL is blocked.</li>
+    </ul>
+    <button class="btn btn-primary" onclick="location.reload()">RELOAD</button>
+  </div>
   <div id="app">
     <canvas id="game-canvas"></canvas>
 
@@ -320,6 +337,34 @@
     </div>
   </div>
 
+  <script>
+    (function () {
+      function fail(msg) {
+        var splash = document.getElementById('boot-splash');
+        var err = document.getElementById('boot-error');
+        var text = document.getElementById('boot-error-msg');
+        if (splash) splash.classList.add('hidden');
+        if (err) err.classList.remove('hidden');
+        if (text && msg) text.textContent = msg;
+      }
+      window.addEventListener('error', function (e) {
+        if (e && e.message && /Failed to fetch|Importing a module script failed|error loading dynamically/i.test(e.message)) {
+          fail('Could not load game scripts (CDN or network blocked). Allow cdn.jsdelivr.net or try another network.');
+        }
+      });
+      window.addEventListener('unhandledrejection', function (e) {
+        var reason = (e && e.reason && (e.reason.message || String(e.reason))) || 'Startup failed';
+        if (/Failed to fetch|three|Importing a module/i.test(reason)) {
+          fail('Could not load Three.js from the CDN. Check your connection or ad-blocker.');
+        }
+      });
+    })();
+  </script>
   <script type="module" src="./js/main.js"></script>
+  <!--
+    REAL REWARDED ADS: before shipping, create an ad-network account (AdSense rewarded / AdMob / etc.),
+    then set window.VehicleStrikeAds = { showRewarded: async () => ({ ok: true }) } that resolves
+    only after the SDK reward callback. Details in js/ads.js. Until then the game uses a DEMO ad.
+  -->
 </body>
 </html>

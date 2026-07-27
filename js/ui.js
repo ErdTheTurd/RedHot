@@ -130,7 +130,7 @@ export function createUI(game, inventory) {
         ? ''
         : `<span class="ops-lock">WIN ${map.winsRequired}</span>`;
       card.innerHTML = `
-        <span class="ops-card-glow" style="--accent:${map.accent}"></span>
+        <span class="ops-card-glow" style="background:radial-gradient(ellipse at center, ${map.accent}59, transparent 70%)"></span>
         <span class="ops-card-tag">${map.theme.toUpperCase()}</span>
         <strong>${map.name}</strong>
         <p>${map.blurb}</p>
