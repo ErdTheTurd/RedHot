@@ -924,28 +924,36 @@ tr.you { background: rgba(255,255,255,0.05); }
   width: 100%;
   overflow: hidden;
   border: 1px solid var(--line);
-  background: #0a1016;
+  background:
+    radial-gradient(circle at 40% 30%, rgba(255,255,255,0.06), transparent 45%),
+    #0a1016;
+  display: grid;
+  place-items: center;
 }
 
 .shop-art img {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   transition: transform 0.25s ease;
 }
 
 .shop-card:hover .shop-art img {
-  transform: scale(1.04);
+  transform: scale(1.03);
 }
 
 .inv-thumb {
   display: block;
   width: 100%;
-  height: 96px;
-  object-fit: cover;
+  aspect-ratio: 1;
+  height: auto;
+  max-height: none;
+  object-fit: contain;
   border: 1px solid rgba(255,255,255,0.12);
-  background: #0a1016;
+  background:
+    radial-gradient(circle at 40% 30%, rgba(255,255,255,0.05), transparent 50%),
+    #0a1016;
 }
 
 .crate-hero {
@@ -960,7 +968,7 @@ tr.you { background: rgba(255,255,255,0.05); }
 .crate-hero-key {
   width: min(160px, 28vw);
   height: min(160px, 28vw);
-  object-fit: cover;
+  object-fit: contain;
   border: 1px solid var(--line);
   background: #0a1016;
   animation: crate-float 3.2s ease-in-out infinite;
@@ -979,17 +987,17 @@ tr.you { background: rgba(255,255,255,0.05); }
 
 .inv-layout {
   display: grid;
-  grid-template-columns: 1fr 280px;
+  grid-template-columns: 1fr minmax(260px, 300px);
   min-height: 0;
   overflow: hidden;
 }
 
 .inv-grid {
   overflow: auto;
-  padding: 0.75rem;
+  padding: 0.85rem;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 0.5rem;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.65rem;
   align-content: start;
 }
 
@@ -998,11 +1006,13 @@ tr.you { background: rgba(255,255,255,0.05); }
   background: rgba(255,255,255,0.03);
   border: 1px solid var(--line);
   color: var(--foam);
-  padding: 0.7rem;
+  padding: 0.55rem;
   cursor: pointer;
   font: inherit;
   display: grid;
-  gap: 0.2rem;
+  gap: 0.3rem;
+  min-width: 0;
+  overflow: visible;
 }
 
 .inv-item.selected, .inv-item:hover { background: rgba(255,255,255,0.07); }
@@ -1023,26 +1033,40 @@ tr.you { background: rgba(255,255,255,0.05); }
 .inv-swatch {
   display: block;
   width: 100%;
-  height: 36px;
+  aspect-ratio: 1;
+  object-fit: contain;
   border: 1px solid rgba(255,255,255,0.12);
+  background: #0a1016;
 }
 
 .inv-detail {
   border-left: 1px solid var(--line);
   padding: 1rem;
   overflow: auto;
+  min-width: 0;
 }
 
 .inv-detail h3 {
   font-family: var(--font-display);
   font-size: 1.5rem;
   margin: 0.35rem 0 0.75rem;
+  word-break: break-word;
 }
 
 .inv-swatch-lg {
-  height: 90px;
+  width: 100%;
+  aspect-ratio: 1;
+  height: auto;
+  object-fit: contain;
   border: 1px solid var(--line);
   margin-bottom: 0.75rem;
+  background: #0a1016;
+  display: block;
+}
+
+.crate-hero-case,
+.crate-hero-key {
+  object-fit: contain;
 }
 
 /* —— CRATE OPENING —— */
@@ -1101,11 +1125,14 @@ tr.you { background: rgba(255,255,255,0.05); }
   background: rgba(255,255,255,0.02);
 }
 
-.reel-cell i {
+.reel-cell i,
+.reel-cell img {
   display: block;
-  width: 64px;
-  height: 48px;
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
   border: 1px solid rgba(255,255,255,0.15);
+  background: #0a1016;
 }
 
 .reel-cell span {

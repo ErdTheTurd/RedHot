@@ -4,43 +4,54 @@ import { createUI } from './ui.js';
 import { Game } from './game.js';
 import { InventoryService } from './inventory.js';
 import { SFX } from './audio.js';
+import { makeSkyDome } from './textures.js';
 
 const canvas = document.getElementById('game-canvas');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+const renderer = new THREE.WebGLRenderer({
+  canvas,
+  antialias: true,
+  powerPreference: 'high-performance',
+});
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 1.15;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x7ea8c0);
-scene.fog = new THREE.Fog(0x7ea8c0, 55, 160);
+scene.background = new THREE.Color(0x7eafc8);
+scene.fog = new THREE.FogExp2(0x8eb6c8, 0.012);
 
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 300);
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 400);
 camera.position.set(0, 20, 30);
 
-const hemi = new THREE.HemisphereLight(0xbcd6ea, 0x3a4a38, 0.85);
+scene.add(makeSkyDome());
+
+const hemi = new THREE.HemisphereLight(0xcfe8f8, 0x3a4a38, 0.7);
 scene.add(hemi);
-const sun = new THREE.DirectionalLight(0xfff0d8, 1.35);
-sun.position.set(-40, 50, 20);
+
+const sun = new THREE.DirectionalLight(0xfff0d0, 1.55);
+sun.position.set(-45, 55, 25);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 sun.shadow.camera.near = 1;
-sun.shadow.camera.far = 160;
-sun.shadow.camera.left = -60;
-sun.shadow.camera.right = 60;
-sun.shadow.camera.top = 60;
-sun.shadow.camera.bottom = -60;
+sun.shadow.camera.far = 180;
+sun.shadow.camera.left = -70;
+sun.shadow.camera.right = 70;
+sun.shadow.camera.top = 70;
+sun.shadow.camera.bottom = -70;
+sun.shadow.bias = -0.00025;
 scene.add(sun);
 
-const ridge = new THREE.Mesh(
-  new THREE.CylinderGeometry(90, 90, 8, 32, 1, true),
-  new THREE.MeshStandardMaterial({ color: 0x4d6358, side: THREE.BackSide, flatShading: true })
-);
-ridge.position.y = -2;
-scene.add(ridge);
+const fill = new THREE.DirectionalLight(0x88aacc, 0.35);
+fill.position.set(40, 20, -30);
+scene.add(fill);
+
+const rim = new THREE.DirectionalLight(0xffc089, 0.25);
+rim.position.set(10, 8, 50);
+scene.add(rim);
 
 const inventory = new InventoryService();
 const input = createInput();
@@ -82,21 +93,25 @@ canvas.addEventListener('click', () => {
 
 let idleT = 0;
 let last = performance.now();
+let worldT = 0;
 
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
+  worldT += dt;
+
+  game.map?.update?.(worldT);
 
   if (game.running) {
     game.update(dt);
   } else {
     idleT += dt;
     camera.position.set(
-      Math.sin(idleT * 0.15) * 35,
-      18 + Math.sin(idleT * 0.2) * 2,
-      Math.cos(idleT * 0.15) * 35
+      Math.sin(idleT * 0.12) * 38,
+      16 + Math.sin(idleT * 0.18) * 2.5,
+      Math.cos(idleT * 0.12) * 38
     );
-    camera.lookAt(0, 1, 0);
+    camera.lookAt(0, 1.5, 0);
   }
 
   renderer.render(scene, camera);

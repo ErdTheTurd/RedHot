@@ -2,7 +2,13 @@ import {
   CATEGORIES, VEHICLES, GEAR, formatMoney, formatTime, TEAMS,
 } from './config.js';
 import { CASES, KEYS, SKINS, RARITY, rarityColor } from './skins.js';
+import { skinImageDataUrl } from './skinArt.js';
 import { SFX } from './audio.js';
+
+function skinImg(skin) {
+  const domain = VEHICLES[skin.vehicleId]?.domain || 'land';
+  return skinImageDataUrl(skin, domain, 256);
+}
 
 export function createUI(game, inventory) {
   const $ = (id) => document.getElementById(id);
@@ -165,7 +171,7 @@ export function createUI(game, inventory) {
         el.className = `inv-item${selectedInv === s.id ? ' selected' : ''}${equipped ? ' equipped' : ''}`;
         el.style.borderColor = rarityColor(s.rarity);
         el.innerHTML = `
-          <i class="inv-swatch" style="background:${'#' + s.color.toString(16).padStart(6, '0')}"></i>
+          <img class="inv-swatch" src="${skinImg(s)}" alt="${s.name}" width="256" height="256" loading="lazy" />
           <strong>${s.shortName}</strong>
           <span>${VEHICLES[s.vehicleId]?.name || ''} · ${RARITY[s.rarity]?.label || ''}</span>
           <em>${row.isDefault ? 'DEFAULT' : `x${row.count}`}${equipped ? ' · EQUIPPED' : ''}</em>
@@ -182,7 +188,7 @@ export function createUI(game, inventory) {
         detail.innerHTML = `
           <span style="color:${rarityColor(s.rarity)}">${RARITY[s.rarity].label}</span>
           <h3>${s.name}</h3>
-          <div class="inv-swatch-lg" style="background:${'#' + s.color.toString(16).padStart(6, '0')}"></div>
+          <img class="inv-swatch-lg" src="${skinImg(s)}" alt="${s.name}" width="256" height="256" />
           <div class="stat-row"><span>Vehicle</span><strong>${VEHICLES[s.vehicleId]?.name}</strong></div>
           <div class="stat-row"><span>Sell value</span><strong>${formatMoney(s.sellPrice)}</strong></div>
           <button class="btn btn-primary" style="width:100%;margin-top:1rem" id="btn-equip-skin">EQUIP</button>
@@ -283,7 +289,7 @@ export function createUI(game, inventory) {
       cell.className = 'reel-cell';
       cell.style.borderBottom = `3px solid ${rarityColor(s.rarity)}`;
       cell.innerHTML = `
-        <i style="background:${'#' + s.color.toString(16).padStart(6, '0')}"></i>
+        <img src="${skinImg(s)}" alt="${s.shortName}" />
         <span>${s.shortName}</span>
       `;
       reel.appendChild(cell);
@@ -329,7 +335,7 @@ export function createUI(game, inventory) {
       cell.className = 'reel-cell';
       cell.style.borderBottom = `3px solid ${rarityColor(s.rarity)}`;
       cell.innerHTML = `
-        <i style="background:${'#' + s.color.toString(16).padStart(6, '0')}"></i>
+        <img src="${skinImg(s)}" alt="${s.shortName}" />
         <span>${s.shortName}</span>
       `;
       reel.appendChild(cell);
@@ -347,8 +353,10 @@ export function createUI(game, inventory) {
       $('crate-rarity').textContent = RARITY[skin.rarity].label;
       $('crate-rarity').style.color = rarityColor(skin.rarity);
       $('crate-skin-name').textContent = skin.name;
-      $('crate-swatch').style.background = '#' + skin.color.toString(16).padStart(6, '0');
-      $('crate-swatch').style.boxShadow = `0 0 40px ${rarityColor(skin.rarity)}`;
+      const sw = $('crate-swatch');
+      sw.style.background = 'transparent';
+      sw.style.boxShadow = `0 0 40px ${rarityColor(skin.rarity)}`;
+      sw.innerHTML = `<img src="${skinImg(skin)}" alt="${skin.name}" style="width:100%;height:100%;object-fit:contain" />`;
       $('crate-result').classList.remove('hidden');
       reelSpinning = false;
       refreshMeta();
@@ -448,6 +456,7 @@ export function createUI(game, inventory) {
     root.innerHTML = `
       <span class="muted">${v.className}</span>
       <h3>${v.name}</h3>
+      <img class="inv-swatch-lg" src="${skinImg(skin)}" alt="${skin.name}" width="256" height="256" style="margin:0.5rem 0" />
       <p class="muted">${v.desc}</p>
       <div class="stat-row"><span>Equipped skin</span><strong style="color:${rarityColor(skin.rarity)}">${skin.shortName}</strong></div>
       <div class="stat-row"><span>Damage</span><strong>${v.damage}</strong></div>
