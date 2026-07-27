@@ -33,16 +33,6 @@ function rgb(hex) {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
-function roundRect(ctx, x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
-}
-
 /** Deterministic noise from seed */
 function hash(i) {
   const x = Math.sin(i * 127.1 + 311.7) * 43758.5453;
@@ -272,132 +262,14 @@ export function makeSkinTexture(THREE, skin, size = 256) {
   return tex;
 }
 
-function drawTank(ctx, cx, cy, scale, skinTexCanvas) {
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.scale(scale, scale);
-  // tracks
-  ctx.fillStyle = '#0d1116';
-  roundRect(ctx, -58, 8, 20, 44, 4); ctx.fill();
-  roundRect(ctx, 38, 8, 20, 44, 4); ctx.fill();
-  ctx.fillStyle = '#1a222c';
-  for (let i = 0; i < 5; i++) {
-    ctx.fillRect(-54, 12 + i * 8, 12, 3);
-    ctx.fillRect(42, 12 + i * 8, 12, 3);
-  }
-  // hull with pattern clipped
-  ctx.save();
-  roundRect(ctx, -46, -14, 92, 48, 7);
-  ctx.clip();
-  ctx.drawImage(skinTexCanvas, -46, -14, 92, 48);
-  ctx.restore();
-  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
-  ctx.lineWidth = 2;
-  roundRect(ctx, -46, -14, 92, 48, 7);
-  ctx.stroke();
-  // turret
-  ctx.save();
-  ctx.beginPath();
-  ctx.ellipse(0, -10, 28, 20, 0, 0, Math.PI * 2);
-  ctx.clip();
-  ctx.drawImage(skinTexCanvas, -28, -30, 56, 40);
-  ctx.restore();
-  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
-  ctx.beginPath();
-  ctx.ellipse(0, -10, 28, 20, 0, 0, Math.PI * 2);
-  ctx.stroke();
-  // barrel
-  ctx.fillStyle = '#0d1116';
-  roundRect(ctx, -8, -58, 16, 48, 3); ctx.fill();
-  ctx.fillStyle = shade('#0d1116', 30);
-  roundRect(ctx, -6, -58, 12, 8, 2); ctx.fill();
-  ctx.restore();
-}
-
-function drawShip(ctx, cx, cy, scale, skinTexCanvas) {
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.scale(scale, scale);
-  ctx.beginPath();
-  ctx.moveTo(0, -54);
-  ctx.lineTo(34, 10);
-  ctx.lineTo(24, 42);
-  ctx.lineTo(-24, 42);
-  ctx.lineTo(-34, 10);
-  ctx.closePath();
-  ctx.save();
-  ctx.clip();
-  ctx.drawImage(skinTexCanvas, -36, -54, 72, 100);
-  ctx.restore();
-  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  ctx.fillStyle = '#0d1116';
-  roundRect(ctx, -14, -8, 28, 26, 3); ctx.fill();
-  ctx.fillStyle = 'rgba(160,210,255,0.35)';
-  roundRect(ctx, -8, -2, 16, 10, 2); ctx.fill();
-  ctx.restore();
-}
-
-function drawJet(ctx, cx, cy, scale, skinTexCanvas) {
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.scale(scale, scale);
-  // wings
-  ctx.beginPath();
-  ctx.moveTo(-68, 14);
-  ctx.lineTo(0, -10);
-  ctx.lineTo(68, 14);
-  ctx.lineTo(48, 28);
-  ctx.lineTo(0, 14);
-  ctx.lineTo(-48, 28);
-  ctx.closePath();
-  ctx.save();
-  ctx.clip();
-  ctx.drawImage(skinTexCanvas, -68, -10, 136, 42);
-  ctx.restore();
-  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  // fuselage
-  ctx.beginPath();
-  ctx.moveTo(0, -52);
-  ctx.quadraticCurveTo(16, -10, 12, 34);
-  ctx.lineTo(-12, 34);
-  ctx.quadraticCurveTo(-16, -10, 0, -52);
-  ctx.closePath();
-  ctx.save();
-  ctx.clip();
-  ctx.drawImage(skinTexCanvas, -16, -52, 32, 90);
-  ctx.restore();
-  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
-  ctx.stroke();
-  ctx.fillStyle = 'rgba(160,210,255,0.6)';
-  ctx.beginPath();
-  ctx.ellipse(0, -16, 8, 14, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = '#0d1116';
-  ctx.beginPath();
-  ctx.moveTo(-3, 20);
-  ctx.lineTo(-3, 42);
-  ctx.lineTo(16, 32);
-  ctx.closePath();
-  ctx.fill();
-  // afterburner glow
-  ctx.fillStyle = 'rgba(80,180,255,0.55)';
-  ctx.beginPath();
-  ctx.ellipse(0, 36, 6, 4, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-}
-
 /**
- * Full-bleed CS-style skin tile: pattern fills the square edge-to-edge,
- * with a huge vehicle silhouette cut from the same finish.
+ * Full-bleed CS-style skin tile: the finish fills the square edge-to-edge.
+ * Vehicle identity lives in the card text — the art is the paint job.
  */
 export function skinImageDataUrl(skin, domain = 'land', size = 256) {
-  const key = `prev2:${skin.id}|${domain}|${size}`;
+  const key = `prev3:${skin.id}|${domain}|${size}`;
   if (previewCache.has(key)) return previewCache.get(key);
+  void domain; // kept in key/signature for callers & future domain accents
 
   const patSize = Math.max(512, size * 2);
   const pat = document.createElement('canvas');
@@ -413,45 +285,47 @@ export function skinImageDataUrl(skin, domain = 'land', size = 256) {
   // Edge-to-edge finish — the square IS the skin
   ctx.drawImage(pat, 0, 0, size, size);
 
-  // Depth vignette so the silhouette reads
-  const vig = ctx.createRadialGradient(size * 0.5, size * 0.45, size * 0.15, size * 0.5, size * 0.55, size * 0.78);
-  vig.addColorStop(0, 'rgba(0,0,0,0)');
-  vig.addColorStop(0.55, 'rgba(0,0,0,0.12)');
-  vig.addColorStop(1, 'rgba(0,0,0,0.55)');
-  ctx.fillStyle = vig;
+  // Soft perspective warp band (depth without shrinking the paint)
+  ctx.save();
+  ctx.globalAlpha = 0.22;
+  ctx.translate(size * 0.5, size * 0.55);
+  ctx.scale(1.15, 0.55);
+  ctx.rotate(-0.18);
+  ctx.drawImage(pat, -size * 0.55, -size * 0.35, size * 1.1, size * 0.7);
+  ctx.restore();
+  ctx.globalAlpha = 1;
+
+  // Corner light + bottom weight
+  const corner = ctx.createRadialGradient(size * 0.18, size * 0.12, 2, size * 0.18, size * 0.12, size * 0.55);
+  corner.addColorStop(0, 'rgba(255,255,255,0.28)');
+  corner.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = corner;
   ctx.fillRect(0, 0, size, size);
 
-  // Giant patterned vehicle filling most of the tile
-  const cx = size / 2;
-  const cy = size * 0.5;
-  const scale = size / 105;
-  ctx.save();
-  ctx.shadowColor = 'rgba(0,0,0,0.55)';
-  ctx.shadowBlur = size * 0.08;
-  ctx.shadowOffsetY = size * 0.02;
-  if (domain === 'sea') drawShip(ctx, cx, cy, scale, pat);
-  else if (domain === 'air') drawJet(ctx, cx, cy, scale, pat);
-  else drawTank(ctx, cx, cy, scale, pat);
-  ctx.restore();
+  const floor = ctx.createLinearGradient(0, size * 0.55, 0, size);
+  floor.addColorStop(0, 'rgba(0,0,0,0)');
+  floor.addColorStop(1, 'rgba(0,0,0,0.45)');
+  ctx.fillStyle = floor;
+  ctx.fillRect(0, 0, size, size);
 
-  // Specular slash across the finish
+  // Specular slash
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   const slash = ctx.createLinearGradient(0, 0, size, size);
   slash.addColorStop(0, 'rgba(255,255,255,0)');
-  slash.addColorStop(0.42, 'rgba(255,255,255,0)');
-  slash.addColorStop(0.5, 'rgba(255,255,255,0.22)');
-  slash.addColorStop(0.58, 'rgba(255,255,255,0)');
+  slash.addColorStop(0.44, 'rgba(255,255,255,0)');
+  slash.addColorStop(0.5, 'rgba(255,255,255,0.28)');
+  slash.addColorStop(0.56, 'rgba(255,255,255,0)');
   slash.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = slash;
   ctx.fillRect(0, 0, size, size);
   ctx.restore();
 
   // High-tier emissive bloom
-  const glowTiers = { restricted: 0.12, classified: 0.18, covert: 0.24, extraordinary: 0.32 };
+  const glowTiers = { restricted: 0.14, classified: 0.2, covert: 0.28, extraordinary: 0.36 };
   const glowA = glowTiers[skin.rarity] || 0;
   if (glowA > 0) {
-    const bloom = ctx.createRadialGradient(size * 0.5, size * 0.5, size * 0.1, size * 0.5, size * 0.5, size * 0.65);
+    const bloom = ctx.createRadialGradient(size * 0.5, size * 0.45, size * 0.08, size * 0.5, size * 0.5, size * 0.7);
     bloom.addColorStop(0, hexToRgba(accent, glowA));
     bloom.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = bloom;
@@ -462,31 +336,32 @@ export function skinImageDataUrl(skin, domain = 'land', size = 256) {
 
   // Micro scuffs for lower grades / stock
   if (skin.isDefault || skin.rarity === 'consumer' || skin.rarity === 'industrial') {
-    ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
     ctx.lineWidth = 1;
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 12; i++) {
       const x = hash(seed + i * 17) * size;
       const y = hash(seed + i * 29) * size;
       ctx.beginPath();
       ctx.moveTo(x, y);
-      ctx.lineTo(x + 8 + hash(i) * 18, y + (hash(i + 3) - 0.5) * 10);
+      ctx.lineTo(x + 10 + hash(i) * 22, y + (hash(i + 3) - 0.5) * 12);
       ctx.stroke();
     }
   }
 
-  // Rarity edge rail (CS inventory accent)
-  const rail = Math.max(4, Math.floor(size * 0.045));
+  // Rarity edge rail
+  const rail = Math.max(5, Math.floor(size * 0.05));
   ctx.fillStyle = accent;
   ctx.fillRect(0, size - rail, size, rail);
-  // soft inner highlight on top edge
-  const topG = ctx.createLinearGradient(0, 0, 0, size * 0.18);
-  topG.addColorStop(0, 'rgba(255,255,255,0.22)');
+  // Thin accent tick on the left (CS vibe)
+  ctx.fillRect(0, 0, Math.max(3, size * 0.018), size);
+
+  const topG = ctx.createLinearGradient(0, 0, 0, size * 0.2);
+  topG.addColorStop(0, 'rgba(255,255,255,0.2)');
   topG.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = topG;
-  ctx.fillRect(0, 0, size, size * 0.18);
+  ctx.fillRect(0, 0, size, size * 0.2);
 
-  // Thin outer frame
-  ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.16)';
   ctx.lineWidth = 1;
   ctx.strokeRect(0.5, 0.5, size - 1, size - 1);
 
