@@ -81,6 +81,7 @@ export const VEHICLES = {
     recoil: 0.02,
     color: 0x3a6b7c,
     desc: 'Fast inshore boat. Ideal for water-lane peeks.',
+    torpedoes: 1,
   },
   wasp_drone: {
     id: 'wasp_drone',
@@ -102,6 +103,7 @@ export const VEHICLES = {
     recoil: 0.012,
     color: 0x7c6b3a,
     desc: 'Ultralight VTOL. High rate of fire, soft shells.',
+    bombs: 0,
   },
 
   // Fast attack / SMG equivalents
@@ -146,6 +148,7 @@ export const VEHICLES = {
     recoil: 0.015,
     color: 0x2f5f74,
     desc: 'Agile cutter. Shreds soft targets on the coast.',
+    torpedoes: 2,
   },
   falcon_interceptor: {
     id: 'falcon_interceptor',
@@ -167,6 +170,7 @@ export const VEHICLES = {
     recoil: 0.011,
     color: 0x8a7040,
     desc: 'Dogfighter. Run-and-gun across the skybox.',
+    bombs: 2,
   },
 
   // Frontline / rifle equivalents
@@ -211,6 +215,7 @@ export const VEHICLES = {
     recoil: 0.022,
     color: 0x24566a,
     desc: 'Destroyer-class gunship. Accurate coastal pressure.',
+    torpedoes: 4,
   },
   raptor_strike: {
     id: 'raptor_strike',
@@ -232,6 +237,7 @@ export const VEHICLES = {
     recoil: 0.017,
     color: 0x7a5a30,
     desc: 'Multirole strike jet. Balanced air superiority.',
+    bombs: 4,
   },
 
   // Capital / AWP & heavy equivalents
@@ -276,6 +282,7 @@ export const VEHICLES = {
     recoil: 0.07,
     color: 0x1a3f50,
     desc: 'Capital naval gun. Slow traverse, devastating salvo.',
+    torpedoes: 6,
   },
   stealth_bomber: {
     id: 'stealth_bomber',
@@ -297,6 +304,7 @@ export const VEHICLES = {
     recoil: 0.055,
     color: 0x2a2e35,
     desc: 'High-altitude payload. Punishes static defenses.',
+    bombs: 8,
   },
 };
 

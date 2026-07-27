@@ -90,6 +90,11 @@ const gameRef = { game: null };
 const ui = createUI({
   get player() { return gameRef.game?.player; },
   get score() { return gameRef.game?.score || { raiders: 0, sentinels: 0 }; },
+  get frags() { return gameRef.game?.frags || { raiders: 0, sentinels: 0 }; },
+  get waveKills() { return gameRef.game?.waveKills || 0; },
+  get mode() { return gameRef.game?.mode; },
+  get modeId() { return gameRef.game?.modeId; },
+  get mapId() { return gameRef.game?.mapId; },
   get phase() { return gameRef.game?.phase; },
   get phaseLabel() { return gameRef.game?.phaseLabel || ''; },
   get timer() { return gameRef.game?.timer || 0; },
@@ -97,13 +102,21 @@ const ui = createUI({
   get units() { return gameRef.game?.units || []; },
   get roundNumber() { return gameRef.game?.roundNumber || 0; },
   get input() { return input; },
-  startMatch(team) { gameRef.game.startMatch(team); },
+  get profile() { return inventory.profile; },
+  startMatch(opts) { gameRef.game.startMatch(opts); },
   closeBuyMenu() { gameRef.game.closeBuyMenu(); },
   buyVehicle(id) { gameRef.game.buyVehicle(id); },
   buyGear(id) { gameRef.game.buyGear(id); },
 }, inventory);
 
-const game = new Game({ scene, camera, input, ui, inventory });
+const game = new Game({
+  scene,
+  camera,
+  input,
+  ui,
+  inventory,
+  lighting: { sun, hemi },
+});
 gameRef.game = game;
 
 input.onCommand((line) => {

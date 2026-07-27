@@ -53,14 +53,53 @@
       <div class="panel-card wide">
         <h2>OPERATIONS BRIEFING</h2>
         <ul class="brief-list">
-          <li><strong>Match</strong> — Raiders plant the warhead at A or B. Sentinels defuse or wipe the fleet. First to 5 rounds.</li>
+          <li><strong>Maps</strong> — Win matches to unlock Dustfall Mesa, Frostbite Sound, and Blacksite Yard.</li>
+          <li><strong>Modes</strong> — Strike (plant/defuse). Skirmish (Lv 3). Siege Wave (Lv 6). Vigilante free-roam (Lv 10).</li>
+          <li><strong>Vigilante</strong> — Solo sandbox. C opens arsenal (B drops bombs in jets). Esc to extract and cash out XP.</li>
           <li><strong>In-round credits</strong> — Buy tanks, jets, and ships during the buy phase (press B).</li>
           <li><strong>Bank</strong> — Match payouts go to your persistent bank (saved in this browser).</li>
           <li><strong>Armory</strong> — Spend bank credits on crates and keys. Open crates for vehicle skins.</li>
           <li><strong>Inventory</strong> — Equip skins onto vehicles. Sell duplicates back to the armory.</li>
-          <li><strong>Controls</strong> — WASD or arrows · Mouse look · <em>F fire</em> · Space jump (−5 ammo) · R reload · E plant/defuse · Tab score · 1–3 slots · G smoke · V EMP · type <code>/give-tokens</code> + Enter for bank cheat</li>
+          <li><strong>Controls</strong> — WASD/arrows · Mouse look · <em>F gun</em> · <em>B bombs</em> (jets, live) / buy menu · <em>T torpedo</em> (ships) · Space jump (−5 ammo) · R reload · E plant/defuse · Tab score · 1–3 slots · G smoke · V EMP · <code>/give-tokens</code> · <code>/give-xp</code></li>
         </ul>
         <button class="btn btn-primary" id="btn-howto-back">RETURN</button>
+      </div>
+    </section>
+
+    <!-- OPS SELECT -->
+    <section id="screen-ops" class="screen">
+      <div class="ops-shell">
+        <header class="ops-header">
+          <div>
+            <p class="brand-mark brand-mark-sm">VEHICLE STRIKE</p>
+            <h2>SELECT OPERATION</h2>
+            <p class="ops-rank" id="ops-rank">LEVEL 1 · 0 WINS</p>
+          </div>
+          <div class="ops-xp">
+            <span>XP</span>
+            <div class="ops-xp-bar"><i id="ops-xp-fill"></i></div>
+            <em id="ops-xp-label">0 / 500</em>
+          </div>
+          <button class="btn btn-ghost" id="btn-ops-back">BACK</button>
+        </header>
+
+        <div class="ops-body">
+          <section class="ops-col">
+            <h3>THEATER</h3>
+            <p class="ops-col-sub">Win battles to unlock new maps</p>
+            <div class="ops-grid" id="ops-maps"></div>
+          </section>
+          <section class="ops-col">
+            <h3>MODE</h3>
+            <p class="ops-col-sub">Level up to unlock new rulesets</p>
+            <div class="ops-grid" id="ops-modes"></div>
+          </section>
+        </div>
+
+        <footer class="ops-footer">
+          <div class="ops-summary" id="ops-summary">Ironfront Harbor · Strike</div>
+          <button class="btn btn-primary" id="btn-ops-continue">CONTINUE</button>
+        </footer>
       </div>
     </section>
 
@@ -221,6 +260,7 @@
           <strong id="hud-vehicle-name">SCOUT TRACKER</strong>
           <em id="hud-skin-name">Factory New</em>
           <em id="hud-ammo">30 / 90</em>
+          <em id="hud-ordnance" class="hud-ordnance"></em>
         </div>
         <div class="hud-money">
           <span>CREDITS</span>
@@ -230,7 +270,7 @@
 
       <div class="hud-slots" id="hud-slots"></div>
       <canvas id="minimap" class="minimap" width="160" height="160"></canvas>
-      <div class="hud-hint" id="hud-hint">WASD/Arrows · F Fire · Space Jump (−5) · B Buy · R Reload · E Plant · G Smoke · V EMP · /give-tokens</div>
+      <div class="hud-hint" id="hud-hint">WASD/Arrows · F Gun · B Bomb / Buy · T Torpedo · Space Jump · R Reload · E Plant · Esc Extract</div>
     </section>
 
     <!-- SCOREBOARD -->
