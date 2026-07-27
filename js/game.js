@@ -678,6 +678,22 @@ export class Game {
     }
     this.updateProjectiles(dt);
 
+    for (const fx of this.effects) {
+      fx.userData.life -= dt;
+      fx.children.forEach((ch) => {
+        ch.position.addScaledVector(ch.userData.vel, dt);
+        ch.userData.vel.y -= 12 * dt;
+        ch.scale.multiplyScalar(0.98);
+      });
+    }
+    this.effects = this.effects.filter((fx) => {
+      if (fx.userData.life <= 0) {
+        this.scene.remove(fx);
+        return false;
+      }
+      return true;
+    });
+
     for (const c of this._smokeClouds) {
       c.userData.life -= dt;
       c.material.opacity = Math.max(0, Math.min(0.55, c.userData.life / 10));
