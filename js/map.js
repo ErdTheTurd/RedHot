@@ -238,6 +238,15 @@ export function createMap(scene) {
         (x > 14 && x < 22 && z > -2 && z < 14);
       return !onLand;
     },
+    /** Top surface Y for land vehicles (wheels sit on this). */
+    groundHeight(x, z) {
+      if (Math.hypot(x + 28, z - 22) < 11) return 0.85; // site A sand top
+      if (Math.hypot(x - 30, z - 18) < 10) return 0.85; // site B
+      if (x > -22 && x < -14 && z > -1 && z < 17) return 0.4; // causeway A
+      if (x > 14 && x < 22 && z > -2 && z < 14) return 0.4; // causeway B
+      if (x > -40 && x < 30 && z > -35.5 && z < 19.5) return 1.0; // mainland top
+      return 0.05; // shoreline / shallow
+    },
     update(t) {
       if (this.water?.material?.map) {
         this.water.material.map.offset.x = t * 0.02;
@@ -260,19 +269,19 @@ export function createMap(scene) {
 export function getSpawns(team) {
   if (team === 'raiders') {
     return [
-      { x: -8, y: 0.15, z: -32, yaw: 0 },
-      { x: 0, y: 0.15, z: -34, yaw: 0 },
-      { x: 8, y: 0.15, z: -32, yaw: 0 },
-      { x: -14, y: 0.15, z: -30, yaw: 0.2 },
-      { x: 14, y: 0.15, z: -30, yaw: -0.2 },
+      { x: -8, y: 1.0, z: -32, yaw: 0 },
+      { x: 0, y: 1.0, z: -34, yaw: 0 },
+      { x: 8, y: 1.0, z: -32, yaw: 0 },
+      { x: -14, y: 1.0, z: -30, yaw: 0.2 },
+      { x: 14, y: 1.0, z: -30, yaw: -0.2 },
     ];
   }
   return [
-    { x: -24, y: 0.15, z: 26, yaw: Math.PI },
-    { x: -30, y: 0.15, z: 20, yaw: Math.PI },
-    { x: 26, y: 0.15, z: 22, yaw: Math.PI },
-    { x: 32, y: 0.15, z: 16, yaw: Math.PI },
-    { x: 4, y: 0.15, z: 10, yaw: Math.PI },
+    { x: -24, y: 0.85, z: 26, yaw: Math.PI },
+    { x: -30, y: 0.85, z: 20, yaw: Math.PI },
+    { x: 26, y: 0.85, z: 22, yaw: Math.PI },
+    { x: 32, y: 0.85, z: 16, yaw: Math.PI },
+    { x: 4, y: 1.0, z: 10, yaw: Math.PI },
   ];
 }
 

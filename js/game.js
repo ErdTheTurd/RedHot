@@ -64,6 +64,8 @@ export class Game {
     const spawnsR = getSpawns('raiders');
     const spawnsS = getSpawns('sentinels');
 
+    const groundY = (x, z) => this.map.groundHeight(x, z);
+
     this.player = new Unit({
       id: 'player',
       name: playerName,
@@ -72,6 +74,7 @@ export class Game {
       spawn: team === TEAMS.RAIDERS ? spawnsR[0] : spawnsS[0],
       vehicleId: 'scout_tracker',
       getSkin: (vid) => this.inventory?.getEquipped(vid) || null,
+      getGroundY: groundY,
     });
     this.player.money = START_MONEY;
     this.scene.add(this.player.mesh);
@@ -88,6 +91,7 @@ export class Game {
         team: TEAMS.RAIDERS,
         spawn,
         vehicleId: 'scout_tracker',
+        getGroundY: groundY,
       });
       u.money = START_MONEY;
       this.scene.add(u.mesh);
@@ -101,6 +105,7 @@ export class Game {
         team: TEAMS.SENTINELS,
         spawn,
         vehicleId: 'scout_tracker',
+        getGroundY: groundY,
       });
       u.money = START_MONEY;
       this.scene.add(u.mesh);
