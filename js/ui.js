@@ -1,16 +1,22 @@
 import {
   CATEGORIES, VEHICLES, GEAR, formatMoney, formatTime, TEAMS,
 } from './config.js';
-import { CASES, KEYS, SKINS, RARITY, rarityColor } from './skins.js';
-import { skinImageDataUrl } from './skinArt.js';
+import { CASES, KEYS, SKINS, RARITY, rarityColor, shopSkinCatalog } from './skins.js';
+import { skinImageDataUrl, vehicleImageDataUrl } from './skinArt.js';
 import { SFX } from './audio.js';
 import {
   MAPS, MODES, isMapUnlocked, isModeUnlocked, xpProgress,
 } from './progression.js';
+import { MAX_ADS_PER_DAY } from './ads.js';
 
 function skinImg(skin) {
   const domain = VEHICLES[skin.vehicleId]?.domain || 'land';
   return skinImageDataUrl(skin, domain, 256);
+}
+
+function vehicleImg(vehicle, inventory) {
+  const skin = inventory?.getEquipped?.(vehicle.id) || null;
+  return vehicleImageDataUrl(vehicle, skin, 256);
 }
 
 export function createUI(game, inventory) {
@@ -28,13 +34,14 @@ export function createUI(game, inventory) {
   };
 
   let shopTab = 'cases';
-  let invTab = 'skins';
+  let invTab = 'vehicles';
   let selectedInv = null;
   let crateFocus = null;
-  let lastOpenedSkin = null;
+  let lastOpenedVehicle = null;
   let reelSpinning = false;
   let opsMap = inventory.profile?.selectedMap || 'ironfront';
   let opsMode = inventory.profile?.selectedMode || 'strike';
+  let pendingAdOffer = null;
 
   function showScreen(name) {
     Object.entries(screens).forEach(([k, el]) => {
@@ -179,7 +186,7 @@ export function createUI(game, inventory) {
 
   $('btn-inventory').onclick = () => {
     SFX.ui();
-    invTab = 'skins';
+    invTab = 'vehicles';
     selectedInv = null;
     renderInventory();
     showScreen('inventory');
@@ -205,6 +212,61 @@ export function createUI(game, inventory) {
     };
   });
 
+  function offerAdPurchase(offer) {
+    pendingAdOffer = offer;
+    const modal = $('ad-modal');
+    if (!modal) {
+      toast(offer.reason || 'Not enough credits');
+      return;
+    }
+    const left = inventory.adsLeft();
+    $('ad-modal-title').textContent = offer.title || 'Watch an ad to buy?';
+    $('ad-modal-body').textContent = offer.body
+      || `You're short ${formatMoney(offer.shortfall)}. Watch a short ad to get exactly enough.`;
+    $('ad-modal-meta').textContent = inventory.canWatchAd()
+      ? `Ads left today: ${left} / ${MAX_ADS_PER_DAY}`
+      : `Daily limit reached (${MAX_ADS_PER_DAY}/day) — play matches to earn bank.`;
+    const watch = $('btn-ad-watch');
+    watch.disabled = !inventory.canWatchAd();
+    watch.textContent = inventory.canWatchAd() ? 'WATCH AD' : 'LIMIT REACHED';
+    modal.classList.remove('hidden');
+  }
+
+  function closeAdModal() {
+    $('ad-modal')?.classList.add('hidden');
+    pendingAdOffer = null;
+  }
+
+  $('btn-ad-cancel').onclick = () => {
+    SFX.ui();
+    closeAdModal();
+  };
+
+  $('btn-ad-watch').onclick = async () => {
+    if (!pendingAdOffer || !inventory.canWatchAd()) return;
+    const offer = pendingAdOffer;
+    $('btn-ad-watch').disabled = true;
+    $('btn-ad-watch').textContent = 'LOADING…';
+    const res = await inventory.watchAdForFunds({
+      shortfall: offer.shortfall,
+      currency: offer.currency || 'wallet',
+      onMatchGrant: offer.onMatchGrant,
+    });
+    if (!res.ok) {
+      toast(res.reason || 'Ad not completed');
+      $('btn-ad-watch').disabled = !inventory.canWatchAd();
+      $('btn-ad-watch').textContent = inventory.canWatchAd() ? 'WATCH AD' : 'LIMIT REACHED';
+      $('ad-modal-meta').textContent = `Ads left today: ${inventory.adsLeft()} / ${MAX_ADS_PER_DAY}`;
+      return;
+    }
+    SFX.buy();
+    toast(`+${formatMoney(res.granted)} · ${res.adsLeft} ads left today`);
+    closeAdModal();
+    if (typeof offer.retry === 'function') offer.retry();
+    refreshMeta();
+    if (shopTab) renderShop();
+  };
+
   function renderShop() {
     refreshMeta();
     const grid = $('shop-grid');
@@ -227,13 +289,26 @@ export function createUI(game, inventory) {
         `;
         card.querySelector('button').onclick = () => {
           const res = inventory.buyCase(c.id);
-          if (!res.ok) toast(res.reason);
-          else { SFX.buy(); toast(`Purchased ${c.name}`); }
+          if (!res.ok) {
+            if (res.shortfall) {
+              offerAdPurchase({
+                ...res,
+                title: `Need ${formatMoney(res.shortfall)} more`,
+                body: `Watch an ad to afford the ${c.name}.`,
+                retry: () => {
+                  const r2 = inventory.buyCase(c.id);
+                  if (r2.ok) { SFX.buy(); toast(`Purchased ${c.name}`); }
+                  else toast(r2.reason);
+                  renderShop();
+                },
+              });
+            } else toast(res.reason);
+          } else { SFX.buy(); toast(`Purchased ${c.name}`); }
           renderShop();
         };
         grid.appendChild(card);
       }
-    } else {
+    } else if (shopTab === 'keys') {
       for (const k of Object.values(KEYS)) {
         const card = document.createElement('article');
         card.className = 'shop-card';
@@ -251,11 +326,70 @@ export function createUI(game, inventory) {
         `;
         card.querySelector('button').onclick = () => {
           const res = inventory.buyKey(k.id);
-          if (!res.ok) toast(res.reason);
-          else { SFX.buy(); toast(`Purchased ${k.name}`); }
+          if (!res.ok) {
+            if (res.shortfall) {
+              offerAdPurchase({
+                ...res,
+                title: `Need ${formatMoney(res.shortfall)} more`,
+                body: `Watch an ad to afford the ${k.name}.`,
+                retry: () => {
+                  const r2 = inventory.buyKey(k.id);
+                  if (r2.ok) { SFX.buy(); toast(`Purchased ${k.name}`); }
+                  else toast(r2.reason);
+                  renderShop();
+                },
+              });
+            } else toast(res.reason);
+          } else { SFX.buy(); toast(`Purchased ${k.name}`); }
           renderShop();
         };
         grid.appendChild(card);
+      }
+    } else {
+      // Skins shop — buy paints separately (for craft you already unlocked)
+      const ownedVids = new Set(inventory.ownedVehicleList().map((v) => v.id));
+      const list = shopSkinCatalog().filter(
+        (s) => ownedVids.has(s.vehicleId) && !(inventory.data.skins[s.id] > 0)
+      );
+      // Prefer showing a mix of rarities / vehicles
+      for (const s of list) {
+        const card = document.createElement('article');
+        card.className = 'shop-card';
+        card.innerHTML = `
+          <div class="shop-art">
+            <img src="${skinImg(s)}" alt="${s.name}" width="512" height="512" loading="lazy" />
+          </div>
+          <h3>${s.shortName}</h3>
+          <p style="color:${rarityColor(s.rarity)}">${RARITY[s.rarity]?.label || ''} · ${VEHICLES[s.vehicleId]?.name || ''}</p>
+          <div class="shop-card-foot">
+            <strong>${formatMoney(s.price)}</strong>
+            <span>Paint kit</span>
+          </div>
+          <button class="btn btn-primary">BUY SKIN</button>
+        `;
+        card.querySelector('button').onclick = () => {
+          const res = inventory.buySkin(s.id);
+          if (!res.ok) {
+            if (res.shortfall) {
+              offerAdPurchase({
+                ...res,
+                title: `Need ${formatMoney(res.shortfall)} more`,
+                body: `Watch an ad to buy ${s.name}.`,
+                retry: () => {
+                  const r2 = inventory.buySkin(s.id);
+                  if (r2.ok) { SFX.buy(); toast(`Purchased ${s.shortName}`); }
+                  else toast(r2.reason);
+                  renderShop();
+                },
+              });
+            } else toast(res.reason);
+          } else { SFX.buy(); toast(`Purchased ${s.shortName}`); }
+          renderShop();
+        };
+        grid.appendChild(card);
+      }
+      if (!list.length) {
+        grid.innerHTML = '<p class="muted" style="padding:1rem">You own every listed paint kit. New finishes appear as the catalog grows.</p>';
       }
     }
   }
@@ -266,11 +400,54 @@ export function createUI(game, inventory) {
     const detail = $('inv-detail');
     grid.innerHTML = '';
 
-    if (invTab === 'skins') {
+    if (invTab === 'vehicles') {
+      const owned = inventory.ownedVehicleList();
+      for (const v of owned) {
+        const eq = inventory.getEquippedFleet(v.domain)?.id === v.id;
+        const el = document.createElement('button');
+        el.className = `inv-item${selectedInv === v.id ? ' selected' : ''}${eq ? ' equipped' : ''}`;
+        el.style.setProperty('--rarity', rarityColor(v.rarity || 'milspec'));
+        el.innerHTML = `
+          <img class="inv-swatch" src="${vehicleImg(v, inventory)}" alt="${v.name}" width="256" height="256" loading="lazy" />
+          <strong>${v.name}</strong>
+          <span>${v.className} · ${v.domain.toUpperCase()}</span>
+          <em>${RARITY[v.rarity || 'milspec']?.label || ''}${eq ? ' · EQUIPPED' : ''}</em>
+        `;
+        el.onclick = () => {
+          selectedInv = v.id;
+          renderInventory();
+        };
+        grid.appendChild(el);
+      }
+
+      if (selectedInv && VEHICLES[selectedInv] && inventory.ownsVehicle(selectedInv)) {
+        const v = VEHICLES[selectedInv];
+        const skin = inventory.getEquipped(v.id);
+        detail.innerHTML = `
+          <span style="color:${rarityColor(v.rarity || 'milspec')}">${RARITY[v.rarity || 'milspec']?.label || ''}</span>
+          <h3>${v.name}</h3>
+          <img class="inv-swatch-lg" src="${vehicleImg(v, inventory)}" alt="${v.name}" width="256" height="256" />
+          <p class="muted">${v.desc}</p>
+          <div class="stat-row"><span>Class</span><strong>${v.className}</strong></div>
+          <div class="stat-row"><span>Domain</span><strong>${v.domain.toUpperCase()}</strong></div>
+          <div class="stat-row"><span>Paint</span><strong style="color:${rarityColor(skin.rarity)}">${skin.shortName}</strong></div>
+          <div class="stat-row"><span>Damage</span><strong>${v.damage}</strong></div>
+          <div class="stat-row"><span>Speed</span><strong>${v.speed}</strong></div>
+          <button class="btn btn-primary" style="width:100%;margin-top:1rem" id="btn-equip-fleet">EQUIP ${v.domain.toUpperCase()} SLOT</button>
+        `;
+        $('btn-equip-fleet').onclick = () => {
+          const res = inventory.equipFleet(v.id);
+          if (!res.ok) toast(res.reason);
+          else { SFX.buy(); toast(`Equipped ${v.name}`); }
+          renderInventory();
+        };
+      } else {
+        detail.innerHTML = '<p class="muted">Select a craft to equip into your land / sea / air fleet slot</p>';
+      }
+    } else if (invTab === 'skins') {
       const owned = inventory.ownedSkins();
-      // Cool drops first; stock paints tucked at the end for reset-to-default
       const defaults = Object.values(SKINS)
-        .filter((s) => s.isDefault)
+        .filter((s) => s.isDefault && inventory.ownsVehicle(s.vehicleId))
         .map((s) => ({ skin: s, count: 1, isDefault: true }));
       const list = [...owned, ...defaults];
       for (const row of list) {
@@ -301,7 +478,7 @@ export function createUI(game, inventory) {
           <div class="stat-row"><span>Vehicle</span><strong>${VEHICLES[s.vehicleId]?.name}</strong></div>
           <div class="stat-row"><span>Pattern</span><strong>${(s.pattern || 'solid').toUpperCase()}</strong></div>
           <div class="stat-row"><span>Sell value</span><strong>${formatMoney(s.sellPrice)}</strong></div>
-          <button class="btn btn-primary" style="width:100%;margin-top:1rem" id="btn-equip-skin">EQUIP</button>
+          <button class="btn btn-primary" style="width:100%;margin-top:1rem" id="btn-equip-skin">EQUIP PAINT</button>
           ${s.isDefault ? '' : '<button class="btn btn-ghost" style="width:100%;margin-top:0.5rem" id="btn-sell-skin">SELL TO ARMORY</button>'}
         `;
         $('btn-equip-skin').onclick = () => {
@@ -324,7 +501,7 @@ export function createUI(game, inventory) {
           };
         }
       } else {
-        detail.innerHTML = '<p class="muted">Select a skin to equip or sell</p>';
+        detail.innerHTML = '<p class="muted">Buy skins in the Armory, then equip them here</p>';
       }
     } else if (invTab === 'cases') {
       for (const c of Object.values(CASES)) {
@@ -343,7 +520,7 @@ export function createUI(game, inventory) {
         };
         grid.appendChild(el);
       }
-      detail.innerHTML = '<p class="muted">Click a case to unlock it with a key</p>';
+      detail.innerHTML = '<p class="muted">Click a case to unlock a fleet craft with a key</p>';
     } else {
       for (const k of Object.values(KEYS)) {
         const n = inventory.keyCount(k.id);
@@ -358,13 +535,13 @@ export function createUI(game, inventory) {
         el.onclick = () => toast(`Owned: ${n}`);
         grid.appendChild(el);
       }
-      detail.innerHTML = '<p class="muted">Keys open matching cases</p>';
+      detail.innerHTML = '<p class="muted">Keys open matching fleet cases</p>';
     }
   }
 
   function openCrateScreen(caseId) {
     crateFocus = caseId;
-    lastOpenedSkin = null;
+    lastOpenedVehicle = null;
     reelSpinning = false;
     const c = CASES[caseId];
     const key = KEYS[c.keyId];
@@ -391,16 +568,15 @@ export function createUI(game, inventory) {
     reel.style.transition = 'none';
     reel.style.transform = 'translateX(0)';
     reel.innerHTML = '';
-    const pool = CASES[caseId].contains().slice().sort(() => Math.random() - 0.5).slice(0, 40);
-    // pad if small pool
+    const pool = CASES[caseId].contains().slice().sort(() => Math.random() - 0.5);
     while (pool.length < 40) pool.push(...CASES[caseId].contains());
-    pool.slice(0, 48).forEach((s) => {
+    pool.slice(0, 48).forEach((v) => {
       const cell = document.createElement('div');
       cell.className = 'reel-cell';
-      cell.style.borderBottom = `3px solid ${rarityColor(s.rarity)}`;
+      cell.style.borderBottom = `3px solid ${rarityColor(v.rarity || 'milspec')}`;
       cell.innerHTML = `
-        <img src="${skinImg(s)}" alt="${s.shortName}" />
-        <span>${s.shortName}</span>
+        <img src="${vehicleImg(v, inventory)}" alt="${v.name}" />
+        <span>${v.name}</span>
       `;
       reel.appendChild(cell);
     });
@@ -421,11 +597,11 @@ export function createUI(game, inventory) {
     }
     const res = inventory.openCase(crateFocus);
     if (!res.ok) { toast(res.reason); return; }
-    lastOpenedSkin = res.skin;
-    animateCrateReveal(res.skin);
+    lastOpenedVehicle = res.vehicle;
+    animateCrateReveal(res.vehicle, res.duplicate);
   };
 
-  function animateCrateReveal(skin) {
+  function animateCrateReveal(vehicle, duplicate = false) {
     reelSpinning = true;
     $('btn-crate-open').classList.add('hidden');
     $('crate-result').classList.add('hidden');
@@ -434,19 +610,19 @@ export function createUI(game, inventory) {
     const reel = $('crate-reel');
     reel.innerHTML = '';
     const cells = [];
+    const pool = CASES[crateFocus].contains();
     for (let i = 0; i < 50; i++) {
-      const filler = CASES[crateFocus].contains()[Math.floor(Math.random() * CASES[crateFocus].contains().length)];
-      cells.push(filler);
+      cells.push(pool[Math.floor(Math.random() * pool.length)]);
     }
     const winIndex = 42;
-    cells[winIndex] = skin;
-    cells.forEach((s) => {
+    cells[winIndex] = vehicle;
+    cells.forEach((v) => {
       const cell = document.createElement('div');
       cell.className = 'reel-cell';
-      cell.style.borderBottom = `3px solid ${rarityColor(s.rarity)}`;
+      cell.style.borderBottom = `3px solid ${rarityColor(v.rarity || 'milspec')}`;
       cell.innerHTML = `
-        <img src="${skinImg(s)}" alt="${s.shortName}" />
-        <span>${s.shortName}</span>
+        <img src="${vehicleImg(v, inventory)}" alt="${v.name}" />
+        <span>${v.name}</span>
       `;
       reel.appendChild(cell);
     });
@@ -459,31 +635,33 @@ export function createUI(game, inventory) {
     });
 
     setTimeout(() => {
-      SFX.crateLand(skin.rarity);
-      $('crate-rarity').textContent = RARITY[skin.rarity].label;
-      $('crate-rarity').style.color = rarityColor(skin.rarity);
-      $('crate-skin-name').textContent = skin.name;
+      SFX.crateLand(vehicle.rarity || 'milspec');
+      $('crate-rarity').textContent = (RARITY[vehicle.rarity || 'milspec']?.label || '')
+        + (duplicate ? ' · DUPLICATE' : ' · NEW FLEET CRAFT');
+      $('crate-rarity').style.color = rarityColor(vehicle.rarity || 'milspec');
+      $('crate-skin-name').textContent = vehicle.name;
       const sw = $('crate-swatch');
       sw.style.background = 'transparent';
-      sw.style.boxShadow = `0 0 40px ${rarityColor(skin.rarity)}`;
-      sw.innerHTML = `<img src="${skinImg(skin)}" alt="${skin.name}" style="width:100%;height:100%;object-fit:cover" />`;
+      sw.style.boxShadow = `0 0 40px ${rarityColor(vehicle.rarity || 'milspec')}`;
+      sw.innerHTML = `<img src="${vehicleImg(vehicle, inventory)}" alt="${vehicle.name}" style="width:100%;height:100%;object-fit:cover" />`;
       $('crate-result').classList.remove('hidden');
       reelSpinning = false;
       refreshMeta();
+      if (duplicate) toast('Duplicate — already in your fleet');
     }, 4300);
   }
 
   $('btn-crate-equip').onclick = () => {
-    if (!lastOpenedSkin) return;
-    inventory.equip(lastOpenedSkin.id);
+    if (!lastOpenedVehicle) return;
+    inventory.equipFleet(lastOpenedVehicle.id);
     SFX.buy();
-    toast(`Equipped ${lastOpenedSkin.shortName}`);
+    toast(`Equipped ${lastOpenedVehicle.name}`);
   };
 
   $('btn-crate-done').onclick = () => {
     SFX.ui();
-    invTab = 'skins';
-    selectedInv = lastOpenedSkin?.id || null;
+    invTab = 'vehicles';
+    selectedInv = lastOpenedVehicle?.id || null;
     renderInventory();
     showScreen('inventory');
   };
@@ -523,7 +701,7 @@ export function createUI(game, inventory) {
         btn.className = `buy-item${cant ? ' cant' : ''}${selectedId === g.id ? ' selected' : ''}`;
         btn.innerHTML = `<div class="name">${g.name}</div><div class="meta">UTILITY</div><div class="price">${formatMoney(g.price)}</div>`;
         btn.onclick = () => { selectedId = g.id; renderBuy(); };
-        btn.ondblclick = () => game.buyGear(g.id);
+        btn.ondblclick = () => tryBuyGear(g.id);
         root.appendChild(btn);
       }
       return;
@@ -531,20 +709,70 @@ export function createUI(game, inventory) {
 
     const list = Object.values(VEHICLES).filter((v) => v.category === buyCat);
     for (const v of list) {
+      const unlocked = inventory.ownsVehicle(v.id);
       const owned = player.loadout.includes(v.id);
-      const cant = player.money < v.price && !owned;
+      const cant = (!unlocked) || (player.money < v.price && !owned);
       const skin = inventory.getEquipped(v.id);
       const btn = document.createElement('button');
-      btn.className = `buy-item buy-item-skin${cant ? ' cant' : ''}${owned ? ' owned' : ''}${selectedId === v.id ? ' selected' : ''}`;
+      btn.className = `buy-item buy-item-skin${cant ? ' cant' : ''}${owned ? ' owned' : ''}${selectedId === v.id ? ' selected' : ''}${unlocked ? '' : ' locked'}`;
       btn.innerHTML = `
-        <img class="buy-thumb" src="${skinImg(skin)}" alt="" width="64" height="64" />
+        <img class="buy-thumb" src="${vehicleImg(v, inventory)}" alt="" width="64" height="64" />
         <div class="name">${v.name}</div>
-        <div class="meta">${v.className} · ${skin?.shortName || 'Factory'}</div>
-        <div class="price">${formatMoney(v.price)}</div>`;
+        <div class="meta">${v.className} · ${unlocked ? (skin?.shortName || 'Stock') : 'LOCKED — open crates'}</div>
+        <div class="price">${unlocked ? formatMoney(v.price) : 'FLEET LOCK'}</div>`;
       btn.onclick = () => { selectedId = v.id; renderBuy(); };
-      btn.ondblclick = () => game.buyVehicle(v.id);
+      btn.ondblclick = () => tryBuyVehicle(v.id);
       root.appendChild(btn);
     }
+  }
+
+  function tryBuyVehicle(id) {
+    const v = VEHICLES[id];
+    if (!v) return;
+    if (!inventory.ownsVehicle(id)) {
+      toast('Unlock this craft from a fleet case first');
+      return;
+    }
+    const p = game.player;
+    if (!p) return;
+    if (p.loadout.includes(id)) {
+      game.buyVehicle(id);
+      return;
+    }
+    if (p.money < v.price) {
+      offerAdPurchase({
+        shortfall: v.price - p.money,
+        currency: 'match',
+        title: `Need ${formatMoney(v.price - p.money)} more`,
+        body: `Watch an ad to deploy the ${v.name} this round.`,
+        onMatchGrant: (n) => {
+          p.money = Math.min(16000, p.money + n);
+        },
+        retry: () => game.buyVehicle(id),
+      });
+      return;
+    }
+    game.buyVehicle(id);
+  }
+
+  function tryBuyGear(id) {
+    const g = GEAR[id];
+    const p = game.player;
+    if (!g || !p) return;
+    if (p.money < g.price) {
+      offerAdPurchase({
+        shortfall: g.price - p.money,
+        currency: 'match',
+        title: `Need ${formatMoney(g.price - p.money)} more`,
+        body: `Watch an ad to buy ${g.name}.`,
+        onMatchGrant: (n) => {
+          p.money = Math.min(16000, p.money + n);
+        },
+        retry: () => game.buyGear(id),
+      });
+      return;
+    }
+    game.buyGear(id);
   }
 
   function renderBuyDetail() {
@@ -563,24 +791,26 @@ export function createUI(game, inventory) {
         <div class="stat-row"><span>Price</span><strong>${formatMoney(v.price)}</strong></div>
         <button class="btn btn-primary" style="margin-top:1rem;width:100%" id="btn-buy-confirm">PURCHASE</button>
       `;
-      $('btn-buy-confirm').onclick = () => game.buyGear(selectedId);
+      $('btn-buy-confirm').onclick = () => tryBuyGear(selectedId);
       return;
     }
     const skin = inventory.getEquipped(v.id);
+    const unlocked = inventory.ownsVehicle(v.id);
     root.innerHTML = `
       <span class="muted">${v.className}</span>
       <h3>${v.name}</h3>
-      <img class="inv-swatch-lg" src="${skinImg(skin)}" alt="${skin.name}" width="256" height="256" style="margin:0.5rem 0" />
+      <img class="inv-swatch-lg" src="${vehicleImg(v, inventory)}" alt="${v.name}" width="256" height="256" style="margin:0.5rem 0" />
       <p class="muted">${v.desc}</p>
-      <div class="stat-row"><span>Equipped skin</span><strong style="color:${rarityColor(skin.rarity)}">${skin.shortName}</strong></div>
+      <div class="stat-row"><span>Fleet</span><strong>${unlocked ? 'UNLOCKED' : 'LOCKED — open crates'}</strong></div>
+      <div class="stat-row"><span>Paint</span><strong style="color:${rarityColor(skin.rarity)}">${skin.shortName}</strong></div>
       <div class="stat-row"><span>Damage</span><strong>${v.damage}</strong></div>
       <div class="stat-row"><span>Fire rate</span><strong>${v.fireRate}/s</strong></div>
       <div class="stat-row"><span>Speed</span><strong>${v.speed}</strong></div>
       <div class="stat-row"><span>Domain</span><strong>${v.domain.toUpperCase()}</strong></div>
       <div class="stat-row"><span>Price</span><strong>${formatMoney(v.price)}</strong></div>
-      <button class="btn btn-primary" style="margin-top:1rem;width:100%" id="btn-buy-confirm">PURCHASE</button>
+      <button class="btn btn-primary" style="margin-top:1rem;width:100%" id="btn-buy-confirm">${unlocked ? 'PURCHASE' : 'LOCKED'}</button>
     `;
-    $('btn-buy-confirm').onclick = () => game.buyVehicle(selectedId);
+    $('btn-buy-confirm').onclick = () => tryBuyVehicle(selectedId);
   }
 
   function renderLoadout() {
@@ -816,5 +1046,6 @@ export function createUI(game, inventory) {
     updateHud,
     updateScoreboard,
     refreshMeta,
+    offerAdPurchase,
   };
 }

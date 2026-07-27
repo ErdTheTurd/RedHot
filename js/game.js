@@ -120,10 +120,21 @@ export class Game {
       team,
       isPlayer: true,
       spawn: team === TEAMS.RAIDERS ? spawnsR[0] : spawnsS[0],
-      vehicleId: this.mode.freeRoam ? 'raptor_strike' : 'scout_tracker',
+      vehicleId: this.inventory?.matchLoadout?.()[0] || (this.mode.freeRoam ? 'raptor_strike' : 'scout_tracker'),
       getSkin: (vid) => this.inventory?.getEquipped(vid) || null,
       getGroundY: groundY,
     });
+    // Prefer equipped fleet: land / sea / air in slots 1–3 when owned
+    const fleet = this.inventory?.matchLoadout?.() || ['scout_tracker', 'coastal_skiff', 'wasp_drone'];
+    this.player.loadout = [
+      fleet[0] || 'scout_tracker',
+      fleet[1] || null,
+      fleet[2] || null,
+    ];
+    this.player.activeSlot = 0;
+    this.player._ensureAmmo?.(fleet[0]);
+    this.player._swapMesh?.();
+    this.player._refillOrdnance?.();
     this.player.money = this.mode.freeRoam ? MAX_MONEY : START_MONEY;
     this.scene.add(this.player.mesh);
     this.units.push(this.player);
@@ -475,6 +486,10 @@ export class Game {
     const p = this.player;
     const v = VEHICLES[id];
     if (!v || !p) return;
+    if (this.inventory && !this.inventory.ownsVehicle(id)) {
+      this.ui.toast('Unlock this craft from a fleet case first');
+      return;
+    }
     if (p.loadout.includes(id)) {
       p.equip(id, p.loadout.indexOf(id));
       this.placeDomainVehicle(p);
@@ -482,7 +497,16 @@ export class Game {
       return;
     }
     if (p.money < v.price) {
-      this.ui.toast('Not enough tokens');
+      this.ui.offerAdPurchase?.({
+        shortfall: v.price - p.money,
+        currency: 'match',
+        title: `Need $${v.price - p.money} more`,
+        body: `Watch an ad to deploy the ${v.name}.`,
+        onMatchGrant: (n) => {
+          p.money = Math.min(MAX_MONEY, p.money + n);
+        },
+        retry: () => this.buyVehicle(id),
+      }) || this.ui.toast('Not enough tokens');
       return;
     }
     // find empty slot or replace active
@@ -526,7 +550,16 @@ export class Game {
     const g = GEAR[id];
     if (!g || !p) return;
     if (p.money < g.price) {
-      this.ui.toast('Not enough credits');
+      this.ui.offerAdPurchase?.({
+        shortfall: g.price - p.money,
+        currency: 'match',
+        title: `Need $${g.price - p.money} more`,
+        body: `Watch an ad to buy ${g.name}.`,
+        onMatchGrant: (n) => {
+          p.money = Math.min(MAX_MONEY, p.money + n);
+        },
+        retry: () => this.buyGear(id),
+      }) || this.ui.toast('Not enough credits');
       return;
     }
     if (id === 'plating') {
