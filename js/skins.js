@@ -95,6 +95,7 @@ export const KEYS = {
     price: 750,
     caseId: 'ironfront_case',
     desc: 'Opens Ironfront Weapon Cases.',
+    image: './assets/keys/ironfront-key.png',
   },
   coastal_key: {
     id: 'coastal_key',
@@ -102,6 +103,7 @@ export const KEYS = {
     price: 850,
     caseId: 'coastal_case',
     desc: 'Opens Coastal Ops Cases.',
+    image: './assets/keys/coastal-key.png',
   },
   apex_key: {
     id: 'apex_key',
@@ -109,6 +111,7 @@ export const KEYS = {
     price: 1200,
     caseId: 'apex_case',
     desc: 'Opens Apex Collection Cases.',
+    image: './assets/keys/apex-key.png',
   },
 };
 
@@ -128,6 +131,7 @@ export const CASES = {
     price: 250,
     keyId: 'ironfront_key',
     color: '#c45c28',
+    image: './assets/cases/ironfront-case.png',
     desc: 'Standard fleet finishes across all vehicle classes.',
     contains: () => skinsForCase([
       'consumer', 'industrial', 'milspec', 'restricted', 'classified', 'covert', 'extraordinary',
@@ -139,6 +143,7 @@ export const CASES = {
     price: 350,
     keyId: 'coastal_key',
     color: '#1d9bf0',
+    image: './assets/cases/coastal-case.png',
     desc: 'Focused on ships and frontline strike craft.',
     contains: () => skinsForCase(
       ['industrial', 'milspec', 'restricted', 'classified', 'covert', 'extraordinary'],
@@ -153,6 +158,7 @@ export const CASES = {
     price: 500,
     keyId: 'apex_key',
     color: '#e4ae39',
+    image: './assets/cases/apex-case.png',
     desc: 'High-tier pool. Better odds at Classified+.',
     contains: () => skinsForCase(['milspec', 'restricted', 'classified', 'covert', 'extraordinary']),
     weightBoost: { milspec: 1, restricted: 1.4, classified: 1.8, covert: 2.2, extraordinary: 2.5 },

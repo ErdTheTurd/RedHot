@@ -95,7 +95,9 @@ export function createUI(game, inventory) {
         const card = document.createElement('article');
         card.className = 'shop-card';
         card.innerHTML = `
-          <div class="shop-case-art" style="--case:${c.color}"></div>
+          <div class="shop-art">
+            <img src="${c.image}" alt="${c.name}" width="512" height="512" loading="lazy" />
+          </div>
           <h3>${c.name}</h3>
           <p>${c.desc}</p>
           <div class="shop-card-foot">
@@ -117,7 +119,9 @@ export function createUI(game, inventory) {
         const card = document.createElement('article');
         card.className = 'shop-card';
         card.innerHTML = `
-          <div class="shop-key-art"></div>
+          <div class="shop-art">
+            <img src="${k.image}" alt="${k.name}" width="512" height="512" loading="lazy" />
+          </div>
           <h3>${k.name}</h3>
           <p>${k.desc}</p>
           <div class="shop-card-foot">
@@ -212,7 +216,7 @@ export function createUI(game, inventory) {
         const el = document.createElement('button');
         el.className = 'inv-item';
         el.innerHTML = `
-          <i class="inv-swatch" style="background:${c.color}"></i>
+          <img class="inv-thumb" src="${c.image}" alt="${c.name}" width="128" height="128" loading="lazy" />
           <strong>${c.name}</strong>
           <span>${c.desc}</span>
           <em>x${n}</em>
@@ -230,7 +234,7 @@ export function createUI(game, inventory) {
         const el = document.createElement('button');
         el.className = 'inv-item';
         el.innerHTML = `
-          <i class="inv-swatch" style="background:#c9a227"></i>
+          <img class="inv-thumb" src="${k.image}" alt="${k.name}" width="128" height="128" loading="lazy" />
           <strong>${k.name}</strong>
           <span>${k.desc}</span>
           <em>x${n}</em>
@@ -247,7 +251,15 @@ export function createUI(game, inventory) {
     lastOpenedSkin = null;
     reelSpinning = false;
     const c = CASES[caseId];
+    const key = KEYS[c.keyId];
     $('crate-title').textContent = c.name;
+    const hero = $('crate-hero');
+    if (hero) {
+      hero.innerHTML = `
+        <img class="crate-hero-case" src="${c.image}" alt="${c.name}" />
+        <img class="crate-hero-key" src="${key.image}" alt="${key.name}" />
+      `;
+    }
     $('crate-result').classList.add('hidden');
     $('btn-crate-open').classList.remove('hidden');
     $('btn-crate-open').disabled = !inventory.canOpen(caseId);
