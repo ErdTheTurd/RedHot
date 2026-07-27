@@ -370,6 +370,135 @@ export function skinImageDataUrl(skin, domain = 'land', size = 256) {
   return url;
 }
 
+/** Fleet craft card art — silhouette by domain/style with optional skin paint. */
+export function vehicleImageDataUrl(vehicle, skin = null, size = 256) {
+  const sid = skin?.id || 'stock';
+  const key = `veh:${vehicle.id}|${sid}|${size}`;
+  if (previewCache.has(key)) return previewCache.get(key);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const col = skin?.color ?? vehicle.color ?? 0x888888;
+  const sec = skin?.secondary ?? ((col >> 1) & 0x7f7f7f);
+  const accent = rarityHex(vehicle.rarity || skin?.rarity || 'milspec');
+
+  const g = ctx.createLinearGradient(0, 0, size, size);
+  g.addColorStop(0, hexColor(sec));
+  g.addColorStop(1, '#0a1016');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+
+  if (skin && !skin.isDefault) {
+    paintPattern(ctx, size, size, { ...skin, color: col, secondary: sec });
+    ctx.fillStyle = 'rgba(8,12,18,0.35)';
+    ctx.fillRect(0, 0, size, size);
+  }
+
+  ctx.fillStyle = hexColor(col);
+  ctx.strokeStyle = hexColor(sec);
+  ctx.lineWidth = 3;
+  const cx = size * 0.5;
+  const cy = size * 0.52;
+  const domain = vehicle.domain;
+  const style = vehicle.style || '';
+
+  ctx.beginPath();
+  if (domain === 'land') {
+    // hull
+    ctx.roundRect?.(cx - size * 0.32, cy - size * 0.08, size * 0.64, size * 0.22, 6);
+    if (!ctx.roundRect) ctx.rect(cx - size * 0.32, cy - size * 0.08, size * 0.64, size * 0.22);
+    ctx.fill();
+    // turret / plow / fang accents
+    ctx.beginPath();
+    if (style === 'apc') ctx.rect(cx - size * 0.22, cy - size * 0.18, size * 0.44, size * 0.14);
+    else if (style === 'frost') {
+      ctx.moveTo(cx - size * 0.38, cy + size * 0.02);
+      ctx.lineTo(cx - size * 0.1, cy - size * 0.2);
+      ctx.lineTo(cx + size * 0.38, cy + size * 0.02);
+      ctx.closePath();
+    } else if (style === 'fang' || style === 'titan') {
+      ctx.ellipse(cx, cy - size * 0.05, size * 0.18, size * 0.12, 0, 0, Math.PI * 2);
+    } else {
+      ctx.ellipse(cx, cy - size * 0.06, size * 0.16, size * 0.11, 0, 0, Math.PI * 2);
+    }
+    ctx.fill();
+    // barrel
+    ctx.fillRect(cx - size * 0.04, cy - size * 0.1, size * 0.08, -size * (style === 'fang' ? 0.32 : 0.22));
+    // tracks
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(cx - size * 0.34, cy + size * 0.12, size * 0.68, size * 0.08);
+  } else if (domain === 'sea') {
+    ctx.moveTo(cx - size * 0.36, cy + size * 0.08);
+    ctx.lineTo(cx - size * 0.28, cy - size * 0.06);
+    ctx.lineTo(cx + size * 0.34, cy - size * 0.02);
+    ctx.lineTo(cx + size * 0.3, cy + size * 0.12);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    if (style === 'battleship' || style === 'leviathan') {
+      ctx.rect(cx - size * 0.12, cy - size * 0.22, size * 0.24, size * 0.18);
+      ctx.rect(cx - size * 0.28, cy - size * 0.14, size * 0.16, size * 0.1);
+      ctx.rect(cx + size * 0.12, cy - size * 0.14, size * 0.16, size * 0.1);
+    } else if (style === 'hydro') {
+      ctx.moveTo(cx - size * 0.3, cy + size * 0.1);
+      ctx.lineTo(cx - size * 0.35, cy + size * 0.22);
+      ctx.lineTo(cx - size * 0.2, cy + size * 0.1);
+      ctx.moveTo(cx + size * 0.3, cy + size * 0.1);
+      ctx.lineTo(cx + size * 0.35, cy + size * 0.22);
+      ctx.lineTo(cx + size * 0.2, cy + size * 0.1);
+    } else {
+      ctx.rect(cx - size * 0.1, cy - size * 0.18, size * 0.2, size * 0.14);
+    }
+    ctx.fill();
+  } else {
+    // jet / drone
+    if (style === 'wasp') {
+      ctx.ellipse(cx, cy, size * 0.16, size * 0.12, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(cx - size * 0.28, cy - size * 0.08, size * 0.14, size * 0.04, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx + size * 0.28, cy - size * 0.08, size * 0.14, size * 0.04, 0, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (style === 'stealth' || style === 'eclipse') {
+      ctx.moveTo(cx, cy - size * 0.12);
+      ctx.lineTo(cx + size * 0.42, cy + size * 0.1);
+      ctx.lineTo(cx, cy + size * 0.06);
+      ctx.lineTo(cx - size * 0.42, cy + size * 0.1);
+      ctx.closePath();
+      ctx.fill();
+    } else if (style === 'dart') {
+      ctx.moveTo(cx, cy - size * 0.28);
+      ctx.lineTo(cx + size * 0.1, cy + size * 0.2);
+      ctx.lineTo(cx - size * 0.1, cy + size * 0.2);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      ctx.moveTo(cx, cy - size * 0.22);
+      ctx.lineTo(cx + size * 0.12, cy);
+      ctx.lineTo(cx + size * 0.38, cy + size * 0.06);
+      ctx.lineTo(cx + size * 0.1, cy + size * 0.1);
+      ctx.lineTo(cx, cy + size * 0.18);
+      ctx.lineTo(cx - size * 0.1, cy + size * 0.1);
+      ctx.lineTo(cx - size * 0.38, cy + size * 0.06);
+      ctx.lineTo(cx - size * 0.12, cy);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  ctx.fillStyle = accent;
+  ctx.fillRect(0, size - Math.max(5, size * 0.05), size, Math.max(5, size * 0.05));
+  ctx.fillRect(0, 0, Math.max(3, size * 0.018), size);
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.font = `700 ${Math.floor(size * 0.07)}px "Barlow Condensed", sans-serif`;
+  ctx.fillText((vehicle.className || domain).toUpperCase(), size * 0.06, size * 0.12);
+
+  const url = canvas.toDataURL('image/png');
+  previewCache.set(key, url);
+  return url;
+}
+
 function hexToRgba(hex, a) {
   const [r, g, b] = rgb(hex);
   return `rgba(${r},${g},${b},${a})`;

@@ -1,37 +1,41 @@
-/** Persistent player inventory — crates, keys, skins, wallet (GitHub Pages / localStorage) */
+/** Persistent inventory — fleet unlocks, shop skins, keys/cases, rewarded ads */
 
-import { CASES, KEYS, SKINS, rollSkinFromCase, defaultSkinId } from './skins.js';
+import { VEHICLES, starterVehicleIds } from './config.js';
+import { CASES, KEYS, SKINS, rollVehicleFromCase, defaultSkinId } from './skins.js';
 import { awardXp, levelFromXp } from './progression.js';
+import { normalizeAdsState, canWatchAd, showRewardedAd, adsRemaining, MAX_ADS_PER_DAY } from './ads.js';
 
-const STORAGE_KEY = 'vehicle_strike_inventory_v1';
+const STORAGE_KEY = 'vehicle_strike_inventory_v2';
+const LEGACY_KEY = 'vehicle_strike_inventory_v1';
+
+function blankOwned() {
+  const owned = {};
+  for (const id of starterVehicleIds()) owned[id] = true;
+  return owned;
+}
+
+function blankEquippedFleet() {
+  return {
+    land: 'scout_tracker',
+    sea: 'coastal_skiff',
+    air: 'wasp_drone',
+  };
+}
 
 function blank() {
   const equipped = {};
-  for (const id of Object.keys(SKINS)) {
-    if (SKINS[id].isDefault) equipped[SKINS[id].vehicleId] = id;
-  }
-  // Starter drip so inventory isn't a wall of Stock paints
-  const starterIds = [
-    'siege_titan__crimson_wake',
-    'raptor_strike__neon_circuit',
-    'battleship_kronos__jade_current',
-    'mbt_anvil__void_carbon',
-    'falcon_interceptor__solar_flare',
-    'destroyer_hull__dragon_scale',
-  ].filter((id) => SKINS[id]);
-  const skins = {};
-  for (const id of starterIds) skins[id] = 1;
-  // Auto-equip the cool starters where available
-  for (const id of starterIds) {
-    const s = SKINS[id];
-    if (s) equipped[s.vehicleId] = id;
+  for (const v of Object.values(VEHICLES)) {
+    equipped[v.id] = defaultSkinId(v.id);
   }
   return {
     wallet: 3500,
     cases: { ironfront_case: 1 },
     keys: { ironfront_key: 1 },
-    skins,
+    skins: {},
     equipped,
+    ownedVehicles: blankOwned(),
+    equippedFleet: blankEquippedFleet(),
+    ads: { date: new Date().toISOString().slice(0, 10), count: 0 },
     stats: { matches: 0, wins: 0, opens: 0 },
     profile: {
       xp: 0,
@@ -44,37 +48,54 @@ function blank() {
   };
 }
 
+function migrateLegacy(data) {
+  const base = blank();
+  const owned = { ...base.ownedVehicles, ...(data.ownedVehicles || {}) };
+  // Old saves may only have skins — grant mid-tier fleet so they aren't stuck
+  if (!data.ownedVehicles) {
+    for (const id of ['apc_crusher', 'patrol_cutter', 'falcon_interceptor']) {
+      owned[id] = true;
+    }
+  }
+  for (const id of starterVehicleIds()) owned[id] = true;
+
+  const equippedFleet = { ...base.equippedFleet, ...(data.equippedFleet || {}) };
+  for (const domain of ['land', 'sea', 'air']) {
+    if (!owned[equippedFleet[domain]]) {
+      equippedFleet[domain] = base.equippedFleet[domain];
+    }
+  }
+
+  const profile = { ...base.profile, ...(data.profile || {}) };
+  const stats = { ...base.stats, ...(data.stats || {}) };
+  return {
+    ...base,
+    ...data,
+    cases: { ...base.cases, ...(data.cases || {}) },
+    keys: { ...base.keys, ...(data.keys || {}) },
+    skins: { ...(data.skins || {}) },
+    equipped: { ...base.equipped, ...(data.equipped || {}) },
+    ownedVehicles: owned,
+    equippedFleet,
+    ads: normalizeAdsState(data.ads),
+    stats,
+    profile: awardXp({ ...profile, stats }, 0),
+  };
+}
+
 export function loadInventory() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return blank();
-    const data = JSON.parse(raw);
-    const base = blank();
-    const skins = { ...(data.skins || {}) };
-    // Legacy saves with zero drops get the starter drip once
-    if (!Object.keys(skins).length) {
-      for (const [id, n] of Object.entries(base.skins)) skins[id] = n;
-    }
-    const equipped = { ...base.equipped, ...(data.equipped || {}) };
-    if (!Object.keys(data.skins || {}).length) {
-      for (const [vid, sid] of Object.entries(base.equipped)) {
-        if (base.skins[sid]) equipped[vid] = sid;
+    let raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      const legacy = localStorage.getItem(LEGACY_KEY);
+      if (legacy) {
+        const migrated = migrateLegacy(JSON.parse(legacy));
+        saveInventory(migrated);
+        return migrated;
       }
+      return blank();
     }
-    const profile = { ...base.profile, ...(data.profile || {}) };
-    const stats = { ...base.stats, ...(data.stats || {}) };
-    // Sync unlocks from XP / wins for older saves
-    const synced = awardXp({ ...profile, stats }, 0);
-    return {
-      ...base,
-      ...data,
-      cases: { ...base.cases, ...(data.cases || {}) },
-      keys: { ...base.keys, ...(data.keys || {}) },
-      skins,
-      equipped,
-      stats,
-      profile: synced,
-    };
+    return migrateLegacy(JSON.parse(raw));
   } catch {
     return blank();
   }
@@ -102,9 +123,54 @@ export class InventoryService {
     this.persist();
   }
 
+  ownsVehicle(id) {
+    return !!this.data.ownedVehicles[id] || !!VEHICLES[id]?.starter;
+  }
+
+  unlockVehicle(id) {
+    if (!VEHICLES[id]) return false;
+    const already = this.ownsVehicle(id);
+    this.data.ownedVehicles[id] = true;
+    this.persist();
+    return !already;
+  }
+
+  ownedVehicleList() {
+    return Object.values(VEHICLES)
+      .filter((v) => this.ownsVehicle(v.id))
+      .sort((a, b) => (a.domain + a.category).localeCompare(b.domain + b.category));
+  }
+
+  equipFleet(vehicleId) {
+    const v = VEHICLES[vehicleId];
+    if (!v) return { ok: false, reason: 'Unknown vehicle' };
+    if (!this.ownsVehicle(vehicleId)) return { ok: false, reason: 'Not unlocked' };
+    this.data.equippedFleet[v.domain] = vehicleId;
+    this.persist();
+    return { ok: true };
+  }
+
+  getEquippedFleet(domain) {
+    const id = this.data.equippedFleet?.[domain];
+    if (id && this.ownsVehicle(id)) return VEHICLES[id];
+    const fallback = starterVehicleIds().map((x) => VEHICLES[x]).find((v) => v.domain === domain);
+    return fallback || null;
+  }
+
+  matchLoadout() {
+    return [
+      this.getEquippedFleet('land')?.id || 'scout_tracker',
+      this.getEquippedFleet('sea')?.id || 'coastal_skiff',
+      this.getEquippedFleet('air')?.id || 'wasp_drone',
+    ];
+  }
+
   buyCase(caseId) {
     const c = CASES[caseId];
-    if (!c || this.data.wallet < c.price) return { ok: false, reason: 'Not enough bank credits' };
+    if (!c) return { ok: false, reason: 'Unknown case' };
+    if (this.data.wallet < c.price) {
+      return { ok: false, reason: 'Not enough bank credits', shortfall: c.price - this.data.wallet, price: c.price, kind: 'case', id: caseId };
+    }
     this.data.wallet -= c.price;
     this.data.cases[caseId] = (this.data.cases[caseId] || 0) + 1;
     this.persist();
@@ -113,9 +179,32 @@ export class InventoryService {
 
   buyKey(keyId) {
     const k = KEYS[keyId];
-    if (!k || this.data.wallet < k.price) return { ok: false, reason: 'Not enough bank credits' };
+    if (!k) return { ok: false, reason: 'Unknown key' };
+    if (this.data.wallet < k.price) {
+      return { ok: false, reason: 'Not enough bank credits', shortfall: k.price - this.data.wallet, price: k.price, kind: 'key', id: keyId };
+    }
     this.data.wallet -= k.price;
     this.data.keys[keyId] = (this.data.keys[keyId] || 0) + 1;
+    this.persist();
+    return { ok: true };
+  }
+
+  buySkin(skinId) {
+    const skin = SKINS[skinId];
+    if (!skin || skin.isDefault) return { ok: false, reason: 'Cannot buy' };
+    if ((this.data.skins[skinId] || 0) > 0) return { ok: false, reason: 'Already owned' };
+    if (this.data.wallet < skin.price) {
+      return {
+        ok: false,
+        reason: 'Not enough bank credits',
+        shortfall: skin.price - this.data.wallet,
+        price: skin.price,
+        kind: 'skin',
+        id: skinId,
+      };
+    }
+    this.data.wallet -= skin.price;
+    this.data.skins[skinId] = 1;
     this.persist();
     return { ok: true };
   }
@@ -140,15 +229,15 @@ export class InventoryService {
     if (this.caseCount(caseId) <= 0) return { ok: false, reason: 'No case owned' };
     if (this.keyCount(c.keyId) <= 0) return { ok: false, reason: 'Need a matching key' };
 
-    const skin = rollSkinFromCase(caseId);
-    if (!skin) return { ok: false, reason: 'Empty case pool' };
+    const vehicle = rollVehicleFromCase(caseId);
+    if (!vehicle) return { ok: false, reason: 'Empty case pool' };
 
     this.data.cases[caseId] -= 1;
     this.data.keys[c.keyId] -= 1;
-    this.data.skins[skin.id] = (this.data.skins[skin.id] || 0) + 1;
+    const isNew = this.unlockVehicle(vehicle.id);
     this.data.stats.opens += 1;
     this.persist();
-    return { ok: true, skin };
+    return { ok: true, vehicle, duplicate: !isNew };
   }
 
   ownedSkins() {
@@ -216,5 +305,43 @@ export class InventoryService {
     this.data.profile.selectedMap = mapId;
     this.data.profile.selectedMode = modeId;
     this.persist();
+  }
+
+  // —— Rewarded ads ——
+  getAdsState() {
+    this.data.ads = normalizeAdsState(this.data.ads);
+    return this.data.ads;
+  }
+
+  adsLeft() {
+    return adsRemaining(this.getAdsState());
+  }
+
+  canWatchAd() {
+    return canWatchAd(this.getAdsState());
+  }
+
+  /**
+   * Watch an ad; on success grant enough bank (or callback) to cover shortfall.
+   * @param {{ shortfall: number, currency?: 'wallet'|'match', onMatchGrant?: (n:number)=>void }} opts
+   */
+  async watchAdForFunds(opts) {
+    const shortfall = Math.max(1, Math.ceil(opts.shortfall || 0));
+    if (!this.canWatchAd()) {
+      return { ok: false, reason: `Daily ad limit reached (${MAX_ADS_PER_DAY}/day)` };
+    }
+    const res = await showRewardedAd();
+    if (!res.ok) return res;
+
+    this.data.ads = normalizeAdsState(this.data.ads);
+    this.data.ads.count += 1;
+    this.persist();
+
+    if (opts.currency === 'match' && typeof opts.onMatchGrant === 'function') {
+      opts.onMatchGrant(shortfall);
+    } else {
+      this.addWallet(shortfall);
+    }
+    return { ok: true, granted: shortfall, adsLeft: this.adsLeft() };
   }
 }

@@ -1431,6 +1431,99 @@ tr.you { background: rgba(255,255,255,0.05); }
   flex-wrap: wrap;
 }
 
+/* —— AD MODAL —— */
+.ad-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 8, 12, 0.78);
+  backdrop-filter: blur(8px);
+  padding: 1rem;
+}
+
+.ad-modal.hidden { display: none; }
+
+.ad-modal-card {
+  width: min(440px, 94vw);
+  background: linear-gradient(160deg, rgba(18, 28, 38, 0.98), rgba(10, 14, 20, 0.98));
+  border: 1px solid var(--line);
+  padding: 1.75rem 1.5rem;
+  text-align: center;
+  animation: ops-in 0.35s ease both;
+}
+
+.ad-modal-kicker {
+  letter-spacing: 0.16em;
+  font-size: 0.75rem;
+  color: #ffd166;
+  margin-bottom: 0.5rem;
+}
+
+.ad-modal-card h3 {
+  font-family: var(--font-display);
+  font-size: 1.8rem;
+  letter-spacing: 0.06em;
+}
+
+.ad-modal-card p {
+  color: var(--mist);
+  margin-top: 0.65rem;
+  line-height: 1.45;
+}
+
+.ad-modal-meta {
+  margin-top: 0.85rem !important;
+  color: var(--foam) !important;
+  font-family: var(--font-display);
+  letter-spacing: 0.08em;
+}
+
+.ad-demo-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.88);
+}
+
+.ad-demo-card {
+  width: min(420px, 92vw);
+  background: #101820;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 1.5rem;
+  text-align: center;
+  color: #e8eef4;
+}
+
+.ad-demo-kicker {
+  color: #ffd166;
+  letter-spacing: 0.14em;
+  font-size: 0.75rem;
+}
+
+.ad-demo-bar {
+  height: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 1.25rem 0;
+  overflow: hidden;
+}
+
+.ad-demo-bar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #e85d04, #ffd166);
+}
+
+.buy-item.locked {
+  opacity: 0.55;
+}
+
 /* —— RESPONSIVE —— */
 @media (max-width: 800px) {
   .menu-hero { margin: auto 0; }

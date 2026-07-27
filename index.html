@@ -53,6 +53,9 @@
       <div class="panel-card wide">
         <h2>OPERATIONS BRIEFING</h2>
         <ul class="brief-list">
+          <li><strong>Fleet crates</strong> — Cases unlock unique-looking tanks, ships, and jets (not skins). Equip them in Inventory → Fleet.</li>
+          <li><strong>Skins</strong> — Buy paint jobs separately in the Armory Skins tab, then equip in Inventory.</li>
+          <li><strong>Ads</strong> — Short on bank? Watch a rewarded ad (max 5/day) when a buy fails for funds.</li>
           <li><strong>Maps</strong> — Win matches to unlock Dustfall Mesa, Frostbite Sound, and Blacksite Yard.</li>
           <li><strong>Modes</strong> — Strike (plant/defuse). Skirmish (Lv 3). Siege Wave (Lv 6). Vigilante free-roam (Lv 10).</li>
           <li><strong>Vigilante</strong> — Solo sandbox. C opens arsenal (B drops bombs in jets). Esc to extract and cash out XP.</li>
@@ -141,6 +144,7 @@
         <div class="meta-tabs">
           <button class="meta-tab active" data-shop-tab="cases">CASES</button>
           <button class="meta-tab" data-shop-tab="keys">KEYS</button>
+          <button class="meta-tab" data-shop-tab="skins">SKINS</button>
         </div>
         <div class="shop-grid" id="shop-grid"></div>
       </div>
@@ -161,7 +165,8 @@
           <button class="btn btn-ghost" id="btn-inv-back">BACK</button>
         </header>
         <div class="meta-tabs">
-          <button class="meta-tab active" data-inv-tab="skins">SKINS</button>
+          <button class="meta-tab active" data-inv-tab="vehicles">FLEET</button>
+          <button class="meta-tab" data-inv-tab="skins">SKINS</button>
           <button class="meta-tab" data-inv-tab="cases">CASES</button>
           <button class="meta-tab" data-inv-tab="keys">KEYS</button>
         </div>
@@ -188,7 +193,7 @@
           <h3 id="crate-skin-name"></h3>
           <div class="crate-swatch" id="crate-swatch"></div>
           <div class="menu-cta" style="justify-content:center;margin-top:1.25rem">
-            <button class="btn btn-primary" id="btn-crate-equip">EQUIP</button>
+            <button class="btn btn-primary" id="btn-crate-equip">EQUIP TO FLEET</button>
             <button class="btn btn-ghost" id="btn-crate-done">CONTINUE</button>
           </div>
         </div>
@@ -299,6 +304,20 @@
     </section>
 
     <div id="damage-fx" class="damage-fx"></div>
+
+    <!-- REWARDED AD / INSUFFICIENT FUNDS -->
+    <div id="ad-modal" class="ad-modal hidden" role="dialog" aria-modal="true">
+      <div class="ad-modal-card">
+        <p class="ad-modal-kicker">NOT ENOUGH CREDITS</p>
+        <h3 id="ad-modal-title">Watch an ad to buy?</h3>
+        <p id="ad-modal-body">Get just enough bank credits to complete this purchase.</p>
+        <p class="ad-modal-meta" id="ad-modal-meta">Ads left today: 5</p>
+        <div class="menu-cta" style="justify-content:center;margin-top:1.25rem">
+          <button class="btn btn-primary" id="btn-ad-watch">WATCH AD</button>
+          <button class="btn btn-ghost" id="btn-ad-cancel">NO THANKS</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script type="module" src="./js/main.js"></script>
