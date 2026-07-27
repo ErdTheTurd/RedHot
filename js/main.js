@@ -1,10 +1,14 @@
 import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { createInput } from './input.js';
 import { createUI } from './ui.js';
 import { Game } from './game.js';
 import { InventoryService } from './inventory.js';
 import { SFX } from './audio.js';
-import { makeSkyDome } from './textures.js';
+import { makeSkyDome, makeEnvMapTexture } from './textures.js';
 
 const canvas = document.getElementById('game-canvas');
 const renderer = new THREE.WebGLRenderer({
@@ -17,44 +21,68 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.2;
+renderer.toneMappingExposure = 1.05;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
-if (renderer.shadowMap) {
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-}
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x7eafc8);
-scene.fog = new THREE.FogExp2(0x8eb6c8, 0.012);
+scene.background = new THREE.Color(0x6a9ab8);
+scene.fog = new THREE.FogExp2(0x8eb6c8, 0.008);
 
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 400);
+const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 500);
 camera.position.set(0, 20, 30);
 
-scene.add(makeSkyDome());
+const sky = makeSkyDome();
+scene.add(sky);
 
-const hemi = new THREE.HemisphereLight(0xcfe8f8, 0x3a4a38, 0.7);
+// Image-based lighting so steel / glass / water actually reflect
+const pmrem = new THREE.PMREMGenerator(renderer);
+pmrem.compileEquirectangularShader();
+const envTex = makeEnvMapTexture();
+scene.environment = pmrem.fromEquirectangular(envTex).texture;
+envTex.dispose();
+
+const hemi = new THREE.HemisphereLight(0xd8eef8, 0x3a4a30, 0.55);
 scene.add(hemi);
 
-const sun = new THREE.DirectionalLight(0xfff0d0, 1.55);
-sun.position.set(-45, 55, 25);
+const sun = new THREE.DirectionalLight(0xfff0d0, 1.45);
+sun.position.set(-50, 62, 28);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
-sun.shadow.camera.near = 1;
-sun.shadow.camera.far = 180;
-sun.shadow.camera.left = -70;
-sun.shadow.camera.right = 70;
-sun.shadow.camera.top = 70;
-sun.shadow.camera.bottom = -70;
-sun.shadow.bias = -0.00025;
+sun.shadow.camera.near = 2;
+sun.shadow.camera.far = 200;
+sun.shadow.camera.left = -65;
+sun.shadow.camera.right = 65;
+sun.shadow.camera.top = 65;
+sun.shadow.camera.bottom = -65;
+sun.shadow.bias = -0.0002;
+sun.shadow.normalBias = 0.03;
 scene.add(sun);
+sun.target.position.set(0, 0, -5);
+scene.add(sun.target);
 
-const fill = new THREE.DirectionalLight(0x88aacc, 0.35);
-fill.position.set(40, 20, -30);
+const fill = new THREE.DirectionalLight(0x88b0d0, 0.4);
+fill.position.set(45, 22, -35);
 scene.add(fill);
 
-const rim = new THREE.DirectionalLight(0xffc089, 0.25);
-rim.position.set(10, 8, 50);
+const rim = new THREE.DirectionalLight(0xffb070, 0.32);
+rim.position.set(12, 10, 55);
 scene.add(rim);
+
+// Ambient fill so shadowed pockets stay readable
+const amb = new THREE.AmbientLight(0x6a8090, 0.18);
+scene.add(amb);
+
+// Post: subtle bloom for muzzle / explosions / emissives
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  0.12,
+  0.4,
+  0.92
+);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
 
 const inventory = new InventoryService();
 const input = createInput();
@@ -86,6 +114,8 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  composer.setSize(window.innerWidth, window.innerHeight);
+  bloom.setSize(window.innerWidth, window.innerHeight);
 });
 
 window.addEventListener('keydown', (e) => {
@@ -112,17 +142,21 @@ function frame(now) {
 
   if (game.running) {
     game.update(dt);
+    if (game.player?.mesh) {
+      sun.target.position.lerp(game.player.mesh.position, 0.04);
+      sun.target.updateMatrixWorld();
+    }
   } else {
     idleT += dt;
     camera.position.set(
-      Math.sin(idleT * 0.12) * 38,
-      16 + Math.sin(idleT * 0.18) * 2.5,
-      Math.cos(idleT * 0.12) * 38
+      Math.sin(idleT * 0.1) * 42,
+      18 + Math.sin(idleT * 0.16) * 3,
+      Math.cos(idleT * 0.1) * 42
     );
-    camera.lookAt(0, 1.5, 0);
+    camera.lookAt(0, 2, -4);
   }
 
-  renderer.render(scene, camera);
+  composer.render();
   requestAnimationFrame(frame);
 }
 
