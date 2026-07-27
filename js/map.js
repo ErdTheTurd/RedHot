@@ -342,6 +342,40 @@ export function createMap(scene) {
       if (x > -40 && x < 30 && z > -35.5 && z < 19.5) return 1.0;
       return 0.05;
     },
+    /** Closest open-water point for deploying ships stuck on land. */
+    nearestWater(x, z) {
+      if (this.isWater(x, z)) return { x, z };
+      const candidates = [
+        { x: -42, z: 0 },
+        { x: 36, z: -8 },
+        { x: -28, z: 34 },
+        { x: 30, z: 30 },
+        { x: 0, z: 28 },
+        { x: -5, z: -40 },
+        { x: 40, z: 10 },
+        { x: -45, z: 20 },
+        { x: 18, z: 22 },
+        { x: -18, z: 24 },
+      ];
+      // Also sample a ring around the player
+      for (let a = 0; a < 16; a++) {
+        const ang = (a / 16) * Math.PI * 2;
+        for (const r of [8, 14, 22, 30]) {
+          candidates.push({ x: x + Math.cos(ang) * r, z: z + Math.sin(ang) * r });
+        }
+      }
+      let best = null;
+      let bestD = Infinity;
+      for (const c of candidates) {
+        if (!this.isWater(c.x, c.z)) continue;
+        const d = (c.x - x) ** 2 + (c.z - z) ** 2;
+        if (d < bestD) {
+          bestD = d;
+          best = c;
+        }
+      }
+      return best || { x: -42, z: 8 };
+    },
     update(t) {
       if (this.water?.material?.map) {
         this.water.material.map.offset.x = t * 0.018;

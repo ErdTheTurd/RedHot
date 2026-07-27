@@ -281,21 +281,48 @@ export class Game {
     if (!v || !p) return;
     if (p.loadout.includes(id)) {
       p.equip(id, p.loadout.indexOf(id));
+      this.placeDomainVehicle(p);
       this.ui.renderBuy();
       return;
     }
     if (p.money < v.price) {
-      this.ui.toast('Not enough credits');
+      this.ui.toast('Not enough tokens');
       return;
     }
-    p.money -= v.price;
-    // fill first empty slot or replace active
+    // find empty slot or replace active
     let slot = p.loadout.findIndex((x) => !x);
     if (slot < 0) slot = p.activeSlot;
+    p.money -= v.price;
     p.equip(id, slot);
+    this.placeDomainVehicle(p);
     SFX.buy();
     this.ui.renderBuy();
     this.ui.toast(`Purchased ${v.name}`);
+  }
+
+  /** Put sea craft into water / jets into air so they aren't stuck underground. */
+  placeDomainVehicle(unit) {
+    if (!unit?.mesh || !unit.vehicle) return;
+    const d = unit.vehicle.domain;
+    if (d === 'sea') {
+      if (this.map.isWater && !this.map.isWater(unit.mesh.position.x, unit.mesh.position.z)) {
+        const sea = this.map.nearestWater(unit.mesh.position.x, unit.mesh.position.z);
+        if (sea) {
+          unit.mesh.position.x = sea.x;
+          unit.mesh.position.z = sea.z;
+          this.ui.toast('Ship deployed to open water');
+        }
+      }
+      unit.mesh.position.y = 0.2;
+      unit.grounded = true;
+      unit.vy = 0;
+    } else if (d === 'air') {
+      unit.mesh.position.y = 8;
+      unit.grounded = true;
+      unit.vy = 0;
+    } else {
+      unit._adjustHeight?.();
+    }
   }
 
   buyGear(id) {
@@ -334,11 +361,25 @@ export class Game {
       return;
     }
     if (def.domain === 'sea' && !water) {
-      // Allow slow beaching so ships can leave land spawns / cross pads
+      // Ships crawl on land but keep steering toward open water so they aren't stuck
       const dx = next.x - cur.x;
       const dz = next.z - cur.z;
-      next.x = cur.x + dx * 0.4;
-      next.z = cur.z + dz * 0.4;
+      const sea = this.map.nearestWater?.(cur.x, cur.z);
+      if (sea) {
+        const toSea = new THREE.Vector3(sea.x - cur.x, 0, sea.z - cur.z);
+        if (toSea.lengthSq() > 0.01) {
+          toSea.normalize();
+          // Blend intended move with pull toward water
+          next.x = cur.x + dx * 0.55 + toSea.x * Math.hypot(dx, dz) * 0.65;
+          next.z = cur.z + dz * 0.55 + toSea.z * Math.hypot(dx, dz) * 0.65;
+        } else {
+          next.x = cur.x + dx * 0.55;
+          next.z = cur.z + dz * 0.55;
+        }
+      } else {
+        next.x = cur.x + dx * 0.55;
+        next.z = cur.z + dz * 0.55;
+      }
     }
 
     for (const c of this.map.colliders) {
@@ -507,26 +548,34 @@ export class Game {
     }
   }
 
-  /** Slash commands (invisible — type /give-credits then Enter). */
+  /** Slash commands — type / then the command, Enter. Works in menu or match. */
   handleCommand(line) {
     const raw = String(line || '').trim();
     if (!raw) return;
     const parts = raw.split(/\s+/);
-    const cmd = parts[0].toLowerCase();
+    const cmd = parts[0].toLowerCase().replace(/_/g, '-');
 
-    if (cmd === '/give-credits' || cmd === '/givecredits') {
+    if (
+      cmd === '/give-credits' ||
+      cmd === '/givecredits' ||
+      cmd === '/give-tokens' ||
+      cmd === '/givetokens' ||
+      cmd === '/tokens' ||
+      cmd === '/credits' ||
+      cmd === '/give-money'
+    ) {
       const amount = Math.max(1, parseInt(parts[1], 10) || 10000);
       this.inventory?.addWallet(amount);
       if (this.player) {
         this.player.money = Math.min(MAX_MONEY, this.player.money + amount);
       }
       this.ui.refreshMeta?.();
-      this.ui.toast(`+${amount} credits (bank + match)`);
+      this.ui.toast(`+${amount} tokens (bank + match)`);
       SFX.buy();
       return;
     }
 
-    this.ui.toast(`Unknown command: ${cmd}`);
+    this.ui.toast(`Unknown command: ${cmd} — try /give-tokens`);
   }
 
   deploySmoke(unit) {
@@ -732,9 +781,9 @@ export class Game {
         else this.openBuyMenu();
       }
     }
-    if (e.code === 'Digit1') this.player?.switchSlot(0);
-    if (e.code === 'Digit2') this.player?.switchSlot(1);
-    if (e.code === 'Digit3') this.player?.switchSlot(2);
+    if (e.code === 'Digit1') { this.player?.switchSlot(0); this.placeDomainVehicle(this.player); }
+    if (e.code === 'Digit2') { this.player?.switchSlot(1); this.placeDomainVehicle(this.player); }
+    if (e.code === 'Digit3') { this.player?.switchSlot(2); this.placeDomainVehicle(this.player); }
     if (e.code === 'Escape' && this.buyOpen) this.closeBuyMenu();
   }
 }
