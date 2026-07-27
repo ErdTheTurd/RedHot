@@ -29,6 +29,9 @@ export class Unit {
     this.yaw = spawn?.yaw ?? 0;
     this.pitch = 0;
     this.vel = new THREE.Vector3();
+    this.vy = 0;
+    this.grounded = true;
+    this.jumpCooldown = 0;
     this.recoil = 0;
     this.fireCooldown = 0;
     this.reloadT = 0;
@@ -99,12 +102,67 @@ export class Unit {
     const x = this.mesh.position.x;
     const z = this.mesh.position.z;
     if (d === 'air') {
-      this.mesh.position.y = 8 + Math.sin(performance.now() * 0.002) * 0.2;
+      this.mesh.position.y = 8 + Math.sin(performance.now() * 0.002) * 0.2 + Math.max(0, this.vy * 0.05);
+      this.grounded = true;
     } else if (d === 'sea') {
-      this.mesh.position.y = 0.15 + Math.sin(performance.now() * 0.003 + this.id.length) * 0.06;
+      const base = 0.15 + Math.sin(performance.now() * 0.003 + this.id.length) * 0.06;
+      if (this.vy > 0 || !this.grounded) {
+        this.mesh.position.y += this.vy * 0.016;
+      } else {
+        this.mesh.position.y = base;
+      }
     } else {
-      this.mesh.position.y = this.getGroundY(x, z);
+      const ground = this.getGroundY(x, z);
+      if (this.grounded && this.vy <= 0) {
+        this.mesh.position.y = ground;
+      }
     }
+  }
+
+  /** Apply gravity / jump arc. Returns true if currently airborne. */
+  updateJump(dt) {
+    this.jumpCooldown = Math.max(0, this.jumpCooldown - dt);
+    const d = this.vehicle.domain;
+    if (d === 'air') {
+      this.vy = 0;
+      this.grounded = true;
+      return false;
+    }
+    const ground = d === 'sea' ? 0.15 : this.getGroundY(this.mesh.position.x, this.mesh.position.z);
+    if (!this.grounded || this.vy > 0) {
+      this.vy -= 28 * dt;
+      this.mesh.position.y += this.vy * dt;
+      if (this.mesh.position.y <= ground) {
+        this.mesh.position.y = ground;
+        this.vy = 0;
+        this.grounded = true;
+      } else {
+        this.grounded = false;
+      }
+    } else {
+      this.mesh.position.y = ground;
+      this.vy = 0;
+      this.grounded = true;
+    }
+    return !this.grounded;
+  }
+
+  tryJump() {
+    if (!this.alive || !this.grounded || this.jumpCooldown > 0) return { ok: false, reason: 'Cannot jump' };
+    if (this.vehicle.domain === 'air') return { ok: false, reason: 'Jets stay airborne' };
+    const ammo = this.ammo[this.vehicle.id];
+    if (!ammo) return { ok: false, reason: 'No ammo' };
+    const total = ammo.mag + ammo.reserve;
+    if (total < 5) return { ok: false, reason: 'Need 5 rounds to jump' };
+    let left = 5;
+    const fromMag = Math.min(ammo.mag, left);
+    ammo.mag -= fromMag;
+    left -= fromMag;
+    if (left > 0) ammo.reserve -= left;
+    this.vy = this.vehicle.domain === 'sea' ? 11 : 13;
+    this.grounded = false;
+    this.jumpCooldown = 0.35;
+    return { ok: true };
   }
 
   resetForRound(spawn) {
@@ -124,6 +182,9 @@ export class Unit {
     this.fireCooldown = 0;
     this.reloadT = 0;
     this.recoil = 0;
+    this.vy = 0;
+    this.grounded = true;
+    this.jumpCooldown = 0;
     this.vel.set(0, 0, 0);
     this.yaw = spawn.yaw;
     this.mesh.position.set(spawn.x, spawn.y, spawn.z);
