@@ -1194,9 +1194,11 @@ tr.you { background: rgba(255,255,255,0.05); }
 
 .crate-swatch {
   width: min(280px, 70vw);
-  height: 100px;
+  aspect-ratio: 1;
+  height: auto;
   margin: 0.5rem auto;
   border: 1px solid var(--line);
+  overflow: hidden;
 }
 
 .menu-cta {
