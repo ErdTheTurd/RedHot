@@ -1108,6 +1108,37 @@ export class Game {
     if (!ammo || unit.reloadT > 0) return;
     const magSize = unit.magSizeFor?.(def.id) || def.magSize;
     if (ammo.mag >= magSize || ammo.reserve <= 0) return;
+
+    if (unit.isPlayer) {
+      if (unit._triviaReloadPending) return;
+      unit._triviaReloadPending = true;
+      this.input.exitLock();
+      const ask = this.ui.askTrivia?.({
+        count: 1,
+        title: 'RELOAD BLESSING',
+        reason: 'Answer one Catholic Trivia question to chamber a fresh magazine.',
+        kicker: 'CATHOLIC TRIVIA',
+        cancellable: true,
+      });
+      Promise.resolve(ask).then((ok) => {
+        unit._triviaReloadPending = false;
+        if (!this.running) return;
+        if (ok) {
+          // Re-check ammo in case state changed during the quiz
+          const a = unit.ammo[unit.vehicle.id];
+          const cap = unit.magSizeFor?.(unit.vehicle.id) || unit.vehicle.magSize;
+          if (a && a.mag < cap && a.reserve > 0 && unit.reloadT <= 0) {
+            unit.reloadT = unit.vehicle.reload * (unit.accMods?.reloadMult || 1);
+            this.ui.toast?.('Magazine blessed', 900);
+          }
+        } else {
+          this.ui.toast?.('Reload denied — try the faith check again', 1400);
+        }
+        if (!this.buyOpen) this.input.requestLock();
+      });
+      return;
+    }
+
     unit.reloadT = def.reload * (unit.accMods?.reloadMult || 1);
   }
 

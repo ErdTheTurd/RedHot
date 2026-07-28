@@ -11,6 +11,7 @@ import {
 } from './progression.js';
 import { MAX_ADS_PER_DAY } from './ads.js';
 import { getGraphicsPreset, setGraphicsPreset } from './graphics.js';
+import { pickTriviaQuestions, defaultPassNeed } from './trivia.js';
 import {
   hasAccount, getAccount, isLoggedIn, createAccount, loginAccount,
 } from './account.js';
@@ -55,6 +56,8 @@ export function createUI(game, inventory, opts = {}) {
   let opsMap = inventory.profile?.selectedMap || 'ironfront';
   let opsMode = inventory.profile?.selectedMode || 'strike';
   let pendingAdOffer = null;
+  let triviaBusy = false;
+  let triviaResolver = null;
 
   const TEAM_SIZE = 4;
   const MM_WAIT_SEC = 60;
@@ -494,6 +497,129 @@ export function createUI(game, inventory, opts = {}) {
     }
   }
 
+  function closeTrivia(result) {
+    $('trivia-modal')?.classList.add('hidden');
+    triviaBusy = false;
+    const resolve = triviaResolver;
+    triviaResolver = null;
+    if (resolve) resolve(!!result);
+  }
+
+  /**
+   * Modal Catholic Trivia quiz.
+   * @returns {Promise<boolean>} whether the player met the pass threshold
+   */
+  function askTrivia({
+    count = 1,
+    passNeed = null,
+    title = 'CATHOLIC TRIVIA',
+    reason = '',
+    kicker = 'CATHOLIC TRIVIA',
+    cancellable = true,
+  } = {}) {
+    if (triviaBusy) return Promise.resolve(false);
+    const questions = pickTriviaQuestions(count);
+    const need = passNeed ?? defaultPassNeed(questions.length);
+    let index = 0;
+    let correct = 0;
+    let locked = false;
+
+    triviaBusy = true;
+    game.input?.exitLock?.();
+
+    const modal = $('trivia-modal');
+    const choicesEl = $('trivia-choices');
+    const feedback = $('trivia-feedback');
+    if (!modal || !choicesEl) return Promise.resolve(true);
+
+    if ($('trivia-kicker')) $('trivia-kicker').textContent = kicker;
+    if ($('trivia-title')) $('trivia-title').textContent = title;
+    if ($('trivia-reason')) $('trivia-reason').textContent = reason || `Need ${need} of ${questions.length} correct.`;
+    if ($('btn-trivia-cancel')) {
+      $('btn-trivia-cancel').classList.toggle('hidden', !cancellable);
+      $('btn-trivia-cancel').onclick = () => {
+        SFX.ui();
+        closeTrivia(false);
+      };
+    }
+
+    modal.classList.remove('hidden');
+    feedback?.classList.add('hidden');
+
+    function paintProgress() {
+      if ($('trivia-progress-label')) {
+        $('trivia-progress-label').textContent = `${Math.min(index + 1, questions.length)} / ${questions.length}`;
+      }
+      if ($('trivia-score-label')) {
+        $('trivia-score-label').textContent = `${correct} correct · need ${need}`;
+      }
+      if ($('trivia-progress-fill')) {
+        const pct = (index / questions.length) * 100;
+        $('trivia-progress-fill').style.width = `${pct}%`;
+      }
+    }
+
+    function showQuestion() {
+      locked = false;
+      paintProgress();
+      const item = questions[index];
+      if ($('trivia-question')) $('trivia-question').textContent = item.q;
+      feedback?.classList.add('hidden');
+      choicesEl.innerHTML = '';
+      item.choices.forEach((label, i) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = label;
+        btn.onclick = () => onPick(i, btn);
+        choicesEl.appendChild(btn);
+      });
+    }
+
+    function onPick(choiceIndex, btn) {
+      if (locked) return;
+      locked = true;
+      const item = questions[index];
+      const ok = choiceIndex === item.answer;
+      choicesEl.querySelectorAll('button').forEach((b, i) => {
+        b.disabled = true;
+        if (i === item.answer) b.classList.add('correct');
+        else if (b === btn && !ok) b.classList.add('wrong');
+      });
+      if (ok) {
+        correct += 1;
+        SFX.ui();
+        if (feedback) {
+          feedback.textContent = item.note || 'Correct.';
+          feedback.classList.remove('hidden', 'bad');
+        }
+      } else {
+        SFX.hit();
+        if (feedback) {
+          feedback.textContent = `Not quite. Answer: ${item.choices[item.answer]}${item.note ? ` — ${item.note}` : ''}`;
+          feedback.classList.remove('hidden');
+          feedback.classList.add('bad');
+        }
+      }
+      paintProgress();
+      setTimeout(() => {
+        index += 1;
+        if (index >= questions.length) {
+          const passed = correct >= need;
+          if ($('trivia-progress-fill')) $('trivia-progress-fill').style.width = '100%';
+          closeTrivia(passed);
+          return;
+        }
+        showQuestion();
+      }, ok ? 650 : 1100);
+    }
+
+    showQuestion();
+
+    return new Promise((resolve) => {
+      triviaResolver = resolve;
+    });
+  }
+
   function renderOnlinePanel(list) {
     const ul = $('online-list');
     const count = $('online-count');
@@ -659,7 +785,6 @@ export function createUI(game, inventory, opts = {}) {
     });
   }
 
-
   // —— Menu ——
   wireBuyVote();
   gateAuthOrMenu();
@@ -695,8 +820,21 @@ export function createUI(game, inventory, opts = {}) {
     };
   }
 
-  $('btn-play').onclick = () => {
+  $('btn-play').onclick = async () => {
     SFX.ui();
+    const ok = await askTrivia({
+      count: 5,
+      passNeed: 4,
+      title: 'PRE-DEPLOY CATECHESIS',
+      reason: 'Answer five Catholic Trivia questions before operations. You need at least four correct to deploy.',
+      kicker: 'CATHOLIC TRIVIA',
+      cancellable: true,
+    });
+    if (!ok) {
+      toast('Deploy locked — take the catechesis again when ready');
+      return;
+    }
+    toast('Catechesis passed — choose your operation');
     renderOps();
     showScreen('ops');
   };
@@ -919,13 +1057,22 @@ export function createUI(game, inventory, opts = {}) {
           </div>
           <button class="btn btn-primary">BUY CASE</button>
         `;
-        card.querySelector('button').onclick = () => {
-          const res = inventory.buyCase(c.id);
-          if (!res.ok) {
-            if (res.shortfall) {
+        card.querySelector('button').onclick = async () => {
+          const short = inventory.wallet < c.price;
+          const blessed = await askTrivia({
+            count: 1,
+            title: short ? 'ALMS FOR THE ARMORY' : 'ARMORY BLESSING',
+            reason: short
+              ? `Short ${formatMoney(c.price - inventory.wallet)} for ${c.name}. Answer correctly for alms.`
+              : `Bless the purchase of ${c.name}.`,
+          });
+          if (!blessed) {
+            toast('Purchase withheld — faith check failed');
+            if (short) {
               offerAdPurchase({
-                ...res,
-                title: `Need ${formatMoney(res.shortfall)} more`,
+                shortfall: c.price - inventory.wallet,
+                currency: 'wallet',
+                title: `Need ${formatMoney(c.price - inventory.wallet)} more`,
                 body: `Watch an ad to afford the ${c.name}.`,
                 retry: () => {
                   const r2 = inventory.buyCase(c.id);
@@ -934,8 +1081,18 @@ export function createUI(game, inventory, opts = {}) {
                   renderShop();
                 },
               });
-            } else toast(res.reason);
-          } else { SFX.buy(); toast(`Purchased ${c.name}`); }
+            }
+            return;
+          }
+          if (inventory.wallet < c.price) {
+            const shortfall = c.price - inventory.wallet;
+            inventory.data.wallet += shortfall;
+            inventory.persist?.();
+            toast(`Alms +${formatMoney(shortfall)}`);
+          }
+          const res = inventory.buyCase(c.id);
+          if (!res.ok) toast(res.reason);
+          else { SFX.buy(); toast(`Purchased ${c.name}`); }
           renderShop();
         };
         grid.appendChild(card);
@@ -956,13 +1113,22 @@ export function createUI(game, inventory, opts = {}) {
           </div>
           <button class="btn btn-primary">BUY KEY</button>
         `;
-        card.querySelector('button').onclick = () => {
-          const res = inventory.buyKey(k.id);
-          if (!res.ok) {
-            if (res.shortfall) {
+        card.querySelector('button').onclick = async () => {
+          const short = inventory.wallet < k.price;
+          const blessed = await askTrivia({
+            count: 1,
+            title: short ? 'ALMS FOR THE ARMORY' : 'ARMORY BLESSING',
+            reason: short
+              ? `Short ${formatMoney(k.price - inventory.wallet)} for ${k.name}. Answer correctly for alms.`
+              : `Bless the purchase of ${k.name}.`,
+          });
+          if (!blessed) {
+            toast('Purchase withheld — faith check failed');
+            if (short) {
               offerAdPurchase({
-                ...res,
-                title: `Need ${formatMoney(res.shortfall)} more`,
+                shortfall: k.price - inventory.wallet,
+                currency: 'wallet',
+                title: `Need ${formatMoney(k.price - inventory.wallet)} more`,
                 body: `Watch an ad to afford the ${k.name}.`,
                 retry: () => {
                   const r2 = inventory.buyKey(k.id);
@@ -971,8 +1137,18 @@ export function createUI(game, inventory, opts = {}) {
                   renderShop();
                 },
               });
-            } else toast(res.reason);
-          } else { SFX.buy(); toast(`Purchased ${k.name}`); }
+            }
+            return;
+          }
+          if (inventory.wallet < k.price) {
+            const shortfall = k.price - inventory.wallet;
+            inventory.data.wallet += shortfall;
+            inventory.persist?.();
+            toast(`Alms +${formatMoney(shortfall)}`);
+          }
+          const res = inventory.buyKey(k.id);
+          if (!res.ok) toast(res.reason);
+          else { SFX.buy(); toast(`Purchased ${k.name}`); }
           renderShop();
         };
         grid.appendChild(card);
@@ -999,13 +1175,22 @@ export function createUI(game, inventory, opts = {}) {
           </div>
           <button class="btn btn-primary">BUY SKIN</button>
         `;
-        card.querySelector('button').onclick = () => {
-          const res = inventory.buySkin(s.id);
-          if (!res.ok) {
-            if (res.shortfall) {
+        card.querySelector('button').onclick = async () => {
+          const short = inventory.wallet < s.price;
+          const blessed = await askTrivia({
+            count: 1,
+            title: short ? 'ALMS FOR THE ARMORY' : 'ARMORY BLESSING',
+            reason: short
+              ? `Short ${formatMoney(s.price - inventory.wallet)} for ${s.shortName}. Answer correctly for alms.`
+              : `Bless the purchase of ${s.shortName}.`,
+          });
+          if (!blessed) {
+            toast('Purchase withheld — faith check failed');
+            if (short) {
               offerAdPurchase({
-                ...res,
-                title: `Need ${formatMoney(res.shortfall)} more`,
+                shortfall: s.price - inventory.wallet,
+                currency: 'wallet',
+                title: `Need ${formatMoney(s.price - inventory.wallet)} more`,
                 body: `Watch an ad to buy ${s.name}.`,
                 retry: () => {
                   const r2 = inventory.buySkin(s.id);
@@ -1014,8 +1199,18 @@ export function createUI(game, inventory, opts = {}) {
                   renderShop();
                 },
               });
-            } else toast(res.reason);
-          } else { SFX.buy(); toast(`Purchased ${s.shortName}`); }
+            }
+            return;
+          }
+          if (inventory.wallet < s.price) {
+            const shortfall = s.price - inventory.wallet;
+            inventory.data.wallet += shortfall;
+            inventory.persist?.();
+            toast(`Alms +${formatMoney(shortfall)}`);
+          }
+          const res = inventory.buySkin(s.id);
+          if (!res.ok) toast(res.reason);
+          else { SFX.buy(); toast(`Purchased ${s.shortName}`); }
           renderShop();
         };
         grid.appendChild(card);
@@ -1506,7 +1701,7 @@ export function createUI(game, inventory, opts = {}) {
     }
   }
 
-  function tryBuyVehicle(id) {
+  async function tryBuyVehicle(id) {
     const v = VEHICLES[id];
     if (!v) return;
     if (!inventory.ownsVehicle(id)) {
@@ -1519,38 +1714,74 @@ export function createUI(game, inventory, opts = {}) {
       game.buyVehicle(id);
       return;
     }
-    if (p.money < v.price) {
-      offerAdPurchase({
-        shortfall: v.price - p.money,
-        currency: 'match',
-        title: `Need ${formatMoney(v.price - p.money)} more`,
-        body: `Watch an ad to deploy the ${v.name} this round.`,
-        onMatchGrant: (n) => {
-          p.money = Math.min(16000, p.money + n);
-        },
-        retry: () => game.buyVehicle(id),
-      });
+
+    const short = p.money < v.price;
+    const blessed = await askTrivia({
+      count: 1,
+      title: short ? 'ALMS & ARSENAL' : 'ARSENAL BLESSING',
+      reason: short
+        ? `You're short ${formatMoney(v.price - p.money)} for ${v.name}. Answer correctly for blessed alms to cover it.`
+        : `Bless the requisition of ${v.name} with one Catholic Trivia answer.`,
+    });
+    if (!blessed) {
+      toast('Purchase withheld — faith check failed');
+      if (short) {
+        offerAdPurchase({
+          shortfall: v.price - p.money,
+          currency: 'match',
+          title: `Need ${formatMoney(v.price - p.money)} more`,
+          body: `Watch an ad to deploy the ${v.name} this round.`,
+          onMatchGrant: (n) => {
+            p.money = Math.min(16000, p.money + n);
+          },
+          retry: () => game.buyVehicle(id),
+        });
+      }
       return;
+    }
+
+    if (p.money < v.price) {
+      const shortfall = v.price - p.money;
+      p.money = Math.min(16000, p.money + shortfall);
+      toast(`Alms +${formatMoney(shortfall)} — go with God`);
     }
     game.buyVehicle(id);
   }
 
-  function tryBuyGear(id) {
+  async function tryBuyGear(id) {
     const g = GEAR[id];
     const p = game.player;
     if (!g || !p) return;
-    if (p.money < g.price) {
-      offerAdPurchase({
-        shortfall: g.price - p.money,
-        currency: 'match',
-        title: `Need ${formatMoney(g.price - p.money)} more`,
-        body: `Watch an ad to buy ${g.name}.`,
-        onMatchGrant: (n) => {
-          p.money = Math.min(16000, p.money + n);
-        },
-        retry: () => game.buyGear(id),
-      });
+
+    const short = p.money < g.price;
+    const blessed = await askTrivia({
+      count: 1,
+      title: short ? 'ALMS FOR GEAR' : 'GEAR BLESSING',
+      reason: short
+        ? `Short ${formatMoney(g.price - p.money)} for ${g.name}. A correct answer covers the gap.`
+        : `One Catholic Trivia question to requisition ${g.name}.`,
+    });
+    if (!blessed) {
+      toast('Purchase withheld — faith check failed');
+      if (short) {
+        offerAdPurchase({
+          shortfall: g.price - p.money,
+          currency: 'match',
+          title: `Need ${formatMoney(g.price - p.money)} more`,
+          body: `Watch an ad to buy ${g.name}.`,
+          onMatchGrant: (n) => {
+            p.money = Math.min(16000, p.money + n);
+          },
+          retry: () => game.buyGear(id),
+        });
+      }
       return;
+    }
+
+    if (p.money < g.price) {
+      const shortfall = g.price - p.money;
+      p.money = Math.min(16000, p.money + shortfall);
+      toast(`Alms +${formatMoney(shortfall)}`);
     }
     game.buyGear(id);
   }
@@ -1851,6 +2082,7 @@ export function createUI(game, inventory, opts = {}) {
     updateScoreboard,
     refreshMeta,
     offerAdPurchase,
+    askTrivia,
     renderBuyVote,
     gateAuthOrMenu,
   };

@@ -91,7 +91,7 @@
         <p class="brand-mark">VEHICLE STRIKE</p>
         <p class="menu-callsign" id="menu-callsign">OPERATOR</p>
         <h1 class="menu-headline">temporary proof of concept</h1>
-        <p class="menu-sub">Fully playable 3D tactical combat. Earn bank credits, buy tank/ship/jet crates, warheads & accessories, unbox upgrades, equip your loadout. When two or more operators are online, team modes share a live matchmaking board.</p>
+        <p class="menu-sub">Fully playable 3D tactical combat. Earn bank credits, buy tank/ship/jet crates, warheads & accessories, unbox upgrades, equip your loadout. Catholic Trivia gates deploy, reloads, and purchases. When two or more operators are online, team modes share a live matchmaking board.</p>
         <div class="menu-cta">
           <button class="btn btn-primary" id="btn-play">DEPLOY</button>
           <button class="btn btn-ghost" id="btn-shop">ARMORY</button>
@@ -128,6 +128,7 @@
         <h2>OPERATIONS BRIEFING</h2>
         <ul class="brief-list">
           <li><strong>Account</strong> — First visit: create a callsign (optional password). That name is your multiplayer identity on this device.</li>
+          <li><strong>Catholic Trivia</strong> — Before DEPLOY, answer 5 questions (need 4 correct). Reloading and buying also ask a quick faith check; a correct answer when short on credits can grant alms.</li>
           <li><strong>Matchmaking</strong> — Team modes search for live operators for 60 seconds. If others are on the site with the same map/mode, you share one lobby under real callsigns. Empty seats become AI.</li>
           <li><strong>Buy vote</strong> — When two or more humans are in a match, vote during buy phase to extend it (up to 2:00). Majority agreement applies.</li>
           <li><strong>Fleet crates</strong> — Tank, Ship, and Jet cases only drop that domain (plus Scout, Skiff, Wasp starters). Equip them in Inventory → Fleet. Arsenal only shows what you own.</li>
@@ -429,6 +430,26 @@
 
     <div id="damage-fx" class="damage-fx"></div>
     <div id="nice-try" class="nice-try hidden" aria-live="assertive">NICE TRY</div>
+
+    <!-- CATHOLIC TRIVIA -->
+    <div id="trivia-modal" class="trivia-modal hidden" role="dialog" aria-modal="true" aria-labelledby="trivia-title">
+      <div class="trivia-card">
+        <p class="trivia-kicker" id="trivia-kicker">CATHOLIC TRIVIA</p>
+        <h3 id="trivia-title">Knowledge check</h3>
+        <p class="trivia-reason" id="trivia-reason"></p>
+        <div class="trivia-progress">
+          <span id="trivia-progress-label">1 / 5</span>
+          <div class="trivia-progress-bar"><i id="trivia-progress-fill"></i></div>
+          <span id="trivia-score-label">0 correct</span>
+        </div>
+        <p class="trivia-question" id="trivia-question"></p>
+        <div class="trivia-choices" id="trivia-choices"></div>
+        <p class="trivia-feedback hidden" id="trivia-feedback"></p>
+        <div class="trivia-actions">
+          <button class="btn btn-ghost" type="button" id="btn-trivia-cancel">CANCEL</button>
+        </div>
+      </div>
+    </div>
 
     <!-- REWARDED AD / INSUFFICIENT FUNDS -->
     <div id="ad-modal" class="ad-modal hidden" role="dialog" aria-modal="true">
