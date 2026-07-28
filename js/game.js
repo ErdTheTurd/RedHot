@@ -88,10 +88,14 @@ export class Game {
     this.applyMapTheme();
   }
 
-  setGraphicsQuality(quality) {
-    this.quality = quality || resolveQuality();
-    if (!this.running) this.loadMap(this.mapId);
+  setGraphicsQuality(qualityOrPreset) {
+    this.quality = typeof qualityOrPreset === 'string'
+      ? resolveQuality(qualityOrPreset)
+      : (qualityOrPreset || resolveQuality());
+    // Always rebuild the battlefield so Ultra ↔ Low Poly actually changes what you see
+    this.loadMap(this.mapId);
     this.onQualityChange?.(this.quality);
+    return this.quality;
   }
 
 

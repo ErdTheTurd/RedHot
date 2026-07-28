@@ -9,6 +9,7 @@ import {
   MAPS, MODES, isMapUnlocked, isModeUnlocked, xpProgress,
 } from './progression.js';
 import { MAX_ADS_PER_DAY } from './ads.js';
+import { getGraphicsPreset, setGraphicsPreset } from './graphics.js';
 
 function skinImg(skin) {
   const domain = VEHICLES[skin.vehicleId]?.domain || 'land';
@@ -239,15 +240,14 @@ export function createUI(game, inventory) {
 
   const lowPolyChk = $('chk-low-poly');
   if (lowPolyChk) {
-    lowPolyChk.checked = game.quality?.low || game.quality?.preset === 'low';
+    // Prefer live game quality; fall back to saved preset (UI boots before Game exists).
+    const savedLow = getGraphicsPreset() === 'low';
+    lowPolyChk.checked = !!(game.quality?.low || game.quality?.preset === 'low' || savedLow);
     lowPolyChk.onchange = () => {
-      const preset = lowPolyChk.checked ? 'low' : 'high';
-      try {
-        localStorage.setItem('vehicle_strike_gfx', preset);
-      } catch { /* ignore */ }
+      const preset = setGraphicsPreset(lowPolyChk.checked ? 'low' : 'high');
       const q = game.setGraphicsQuality?.(preset);
       SFX.ui();
-      toast(q?.low
+      toast(q?.low || preset === 'low'
         ? 'Low poly on — lighter map & effects'
         : 'Ultra graphics on — rebuilt battlefield');
     };

@@ -9,7 +9,7 @@ import { Game } from './game.js';
 import { InventoryService } from './inventory.js';
 import { SFX } from './audio.js';
 import { makeSkyDome, makeEnvMapTexture } from './textures.js';
-import { getGraphicsPreset, resolveQuality } from './graphics.js';
+import { getGraphicsPreset, resolveQuality, setGraphicsPreset } from './graphics.js';
 
 const bootError = document.getElementById('boot-error');
 const bootErrorMsg = document.getElementById('boot-error-msg');
@@ -52,16 +52,54 @@ async function boot() {
     throw new Error('Could not create WebGL renderer. Try another browser or update your GPU drivers.');
   }
 
+  let composer = null;
+  let bloom = null;
+
+  function rebuildComposer(q) {
+    if (composer) {
+      composer.dispose?.();
+      composer = null;
+      bloom = null;
+    }
+    if (!q.bloom) return;
+    try {
+      composer = new EffectComposer(renderer);
+      composer.addPass(new RenderPass(scene, camera));
+      // Stronger Ultra bloom — spectacle without washing out the map
+      bloom = new UnrealBloomPass(
+        new THREE.Vector2(window.innerWidth, window.innerHeight),
+        0.34,
+        0.52,
+        0.82
+      );
+      composer.addPass(bloom);
+      composer.addPass(new OutputPass());
+      composer.setSize(window.innerWidth, window.innerHeight);
+    } catch (e) {
+      console.warn('Post-processing disabled', e);
+      composer = null;
+      bloom = null;
+    }
+  }
+
   function applyRendererQuality(q) {
     quality = q;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.pixelRatioCap));
     renderer.shadowMap.enabled = q.shadows;
+    renderer.toneMappingExposure = q.low ? 1.0 : 1.28;
     if (sun) {
       sun.castShadow = q.shadows;
-      if (q.shadows) sun.shadow.mapSize.set(q.shadowSize, q.shadowSize);
+      sun.intensity = q.low ? 1.2 : 1.72;
+      if (q.shadows) {
+        sun.shadow.mapSize.set(q.shadowSize, q.shadowSize);
+        sun.shadow.needsUpdate = true;
+      }
     }
-    if (amb) amb.intensity = q.low ? 0.35 : 0.18;
-    renderer.toneMappingExposure = q.low ? 1.0 : 1.12;
+    if (amb) amb.intensity = q.low ? 0.35 : 0.12;
+    if (hemi) hemi.intensity = q.low ? 0.45 : 0.7;
+    if (fill) fill.intensity = q.low ? 0.28 : 0.55;
+    if (rim) rim.intensity = q.low ? 0.2 : 0.45;
+    rebuildComposer(q);
   }
 
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, quality.pixelRatioCap));
@@ -69,12 +107,12 @@ async function boot() {
   renderer.shadowMap.enabled = quality.shadows;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = quality.low ? 1.0 : 1.12;
+  renderer.toneMappingExposure = quality.low ? 1.0 : 1.28;
   if ('outputColorSpace' in renderer) renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x6a9ab8);
-  scene.fog = new THREE.FogExp2(0x8eb6c8, 0.008);
+  scene.fog = new THREE.FogExp2(0x8eb6c8, 0.0072);
 
   const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 500);
   camera.position.set(0, 20, 30);
@@ -92,10 +130,10 @@ async function boot() {
     console.warn('Env map skipped', e);
   }
 
-  const hemi = new THREE.HemisphereLight(0xd8eef8, 0x3a4a30, 0.55);
+  const hemi = new THREE.HemisphereLight(0xd8eef8, 0x3a4a30, quality.low ? 0.45 : 0.7);
   scene.add(hemi);
 
-  const sun = new THREE.DirectionalLight(0xfff0d0, 1.45);
+  const sun = new THREE.DirectionalLight(0xfff0d0, quality.low ? 1.2 : 1.72);
   sun.position.set(-50, 62, 28);
   sun.castShadow = quality.shadows;
   if (quality.shadows) {
@@ -113,37 +151,18 @@ async function boot() {
   sun.target.position.set(0, 0, -5);
   scene.add(sun.target);
 
-  const fill = new THREE.DirectionalLight(0x88b0d0, 0.4);
+  const fill = new THREE.DirectionalLight(0x88b0d0, quality.low ? 0.28 : 0.55);
   fill.position.set(45, 22, -35);
   scene.add(fill);
 
-  const rim = new THREE.DirectionalLight(0xffb070, 0.32);
+  const rim = new THREE.DirectionalLight(0xffb070, quality.low ? 0.2 : 0.45);
   rim.position.set(12, 10, 55);
   scene.add(rim);
 
-  const amb = new THREE.AmbientLight(0x6a8090, quality.low ? 0.35 : 0.18);
+  const amb = new THREE.AmbientLight(0x6a8090, quality.low ? 0.35 : 0.12);
   scene.add(amb);
 
-  let composer = null;
-  let bloom = null;
-  if (quality.bloom) {
-    try {
-      composer = new EffectComposer(renderer);
-      composer.addPass(new RenderPass(scene, camera));
-      bloom = new UnrealBloomPass(
-        new THREE.Vector2(window.innerWidth, window.innerHeight),
-        0.12,
-        0.4,
-        0.92
-      );
-      composer.addPass(bloom);
-      composer.addPass(new OutputPass());
-    } catch (e) {
-      console.warn('Post-processing disabled', e);
-      composer = null;
-      bloom = null;
-    }
-  }
+  rebuildComposer(quality);
 
   const inventory = new InventoryService();
   const input = createInput();
@@ -169,9 +188,8 @@ async function boot() {
     buyVehicle(id) { gameRef.game.buyVehicle(id); },
     buyGear(id) { gameRef.game.buyGear(id); },
     setGraphicsQuality(preset) {
-      const q = resolveQuality(preset);
-      gameRef.game.setGraphicsQuality(q);
-      return q;
+      const saved = setGraphicsPreset(preset);
+      return gameRef.game.setGraphicsQuality(saved);
     },
     get quality() { return gameRef.game?.quality; },
   }, inventory);
@@ -187,6 +205,10 @@ async function boot() {
     onQualityChange: (q) => applyRendererQuality(q),
   });
   gameRef.game = game;
+
+  // Sync Low Poly checkbox after Game exists (createUI runs earlier).
+  const lowPolyChk = document.getElementById('chk-low-poly');
+  if (lowPolyChk) lowPolyChk.checked = !!game.quality?.low;
 
   input.onCommand((line) => {
     game.handleCommand(line);
