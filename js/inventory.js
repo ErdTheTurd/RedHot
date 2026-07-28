@@ -1,7 +1,7 @@
 /** Persistent inventory — fleet unlocks, shop skins, keys/cases, rewarded ads */
 
 import { VEHICLES, starterVehicleIds } from './config.js';
-import { CASES, KEYS, SKINS, rollVehicleFromCase, rollItemFromCase, defaultSkinId } from './skins.js';
+import { CASES, KEYS, SKINS, rollVehicleFromCase, rollItemFromCase, defaultSkinId, LEGACY_CASE_MAP, LEGACY_KEY_MAP } from './skins.js';
 import { GEAR_ITEMS } from './gearItems.js';
 import { awardXp, levelFromXp } from './progression.js';
 import { normalizeAdsState, canWatchAd, showRewardedAd, adsRemaining, MAX_ADS_PER_DAY } from './ads.js';
@@ -30,8 +30,8 @@ function blank() {
   }
   return {
     wallet: 3500,
-    cases: { ironfront_case: 1, warheads_case: 1, accessories_case: 1 },
-    keys: { ironfront_key: 1, warheads_key: 1, accessories_key: 1 },
+    cases: { tank_case: 1, ship_case: 1, jet_case: 1, warheads_case: 1, accessories_case: 1 },
+    keys: { tank_key: 1, ship_key: 1, jet_key: 1, warheads_key: 1, accessories_key: 1 },
     skins: {},
     equipped,
     ownedVehicles: blankOwned(),
@@ -52,6 +52,26 @@ function blank() {
   };
 }
 
+function remapLegacyCrates(bag, map) {
+  const out = { ...(bag || {}) };
+  for (const [oldId, newId] of Object.entries(map)) {
+    const n = out[oldId] || 0;
+    if (n > 0) {
+      out[newId] = (out[newId] || 0) + n;
+      delete out[oldId];
+    } else if (oldId in out) {
+      delete out[oldId];
+    }
+  }
+  // Drop unknown obsolete ids
+  for (const id of Object.keys(out)) {
+    if (!(id in CASES) && !(id in KEYS) && !(id in map)) {
+      // keep warheads/accessories; strip anything else unknown only if not in CASES/KEYS
+    }
+  }
+  return out;
+}
+
 function migrateLegacy(data) {
   const base = blank();
   // Only keep craft the player actually unlocked — no free mid-tier handouts
@@ -67,11 +87,20 @@ function migrateLegacy(data) {
 
   const profile = { ...base.profile, ...(data.profile || {}) };
   const stats = { ...base.stats, ...(data.stats || {}) };
+  const cases = remapLegacyCrates({ ...base.cases, ...(data.cases || {}) }, LEGACY_CASE_MAP);
+  const keys = remapLegacyCrates({ ...base.keys, ...(data.keys || {}) }, LEGACY_KEY_MAP);
+  // Strip legacy case/key ids that are no longer sold
+  for (const id of Object.keys(cases)) {
+    if (!CASES[id]) delete cases[id];
+  }
+  for (const id of Object.keys(keys)) {
+    if (!KEYS[id]) delete keys[id];
+  }
   return {
     ...base,
     ...data,
-    cases: { ...base.cases, ...(data.cases || {}) },
-    keys: { ...base.keys, ...(data.keys || {}) },
+    cases,
+    keys,
     skins: { ...(data.skins || {}) },
     equipped: { ...base.equipped, ...(data.equipped || {}) },
     ownedVehicles: owned,

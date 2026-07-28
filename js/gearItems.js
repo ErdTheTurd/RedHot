@@ -19,6 +19,7 @@ export const GEAR_ITEMS = {
   // —— WARHEADS (consumables) ——
   ammo_belt: {
     id: 'ammo_belt',
+    image: './assets/gear/ammo_belt.png',
     name: 'Ammo Belt',
     shortName: 'Bullets',
     crate: 'warheads',
@@ -31,6 +32,7 @@ export const GEAR_ITEMS = {
   },
   mag_crate: {
     id: 'mag_crate',
+    image: './assets/gear/mag_crate.png',
     name: 'Magazine Crate',
     shortName: 'Mags',
     crate: 'warheads',
@@ -43,6 +45,7 @@ export const GEAR_ITEMS = {
   },
   bomb_rack: {
     id: 'bomb_rack',
+    image: './assets/gear/bomb_rack.png',
     name: 'Bomb Rack',
     shortName: 'Bombs',
     crate: 'warheads',
@@ -55,6 +58,7 @@ export const GEAR_ITEMS = {
   },
   torpedo_rack: {
     id: 'torpedo_rack',
+    image: './assets/gear/torpedo_rack.png',
     name: 'Torpedo Rack',
     shortName: 'Torpedoes',
     crate: 'warheads',
@@ -67,6 +71,7 @@ export const GEAR_ITEMS = {
   },
   landmine_pack: {
     id: 'landmine_pack',
+    image: './assets/gear/landmine_pack.png',
     name: 'Landmine Pack',
     shortName: 'Mines',
     crate: 'warheads',
@@ -79,6 +84,7 @@ export const GEAR_ITEMS = {
   },
   ap_rounds: {
     id: 'ap_rounds',
+    image: './assets/gear/ap_rounds.png',
     name: 'AP Rounds',
     shortName: 'AP Rounds',
     crate: 'warheads',
@@ -91,6 +97,7 @@ export const GEAR_ITEMS = {
   },
   incendiary_shells: {
     id: 'incendiary_shells',
+    image: './assets/gear/incendiary_shells.png',
     name: 'Incendiary Shells',
     shortName: 'Incendiary',
     crate: 'warheads',
@@ -103,6 +110,7 @@ export const GEAR_ITEMS = {
   },
   depth_charge: {
     id: 'depth_charge',
+    image: './assets/gear/depth_charge.png',
     name: 'Depth Charge',
     shortName: 'Depth Charge',
     crate: 'warheads',
@@ -115,6 +123,7 @@ export const GEAR_ITEMS = {
   },
   cluster_bombs: {
     id: 'cluster_bombs',
+    image: './assets/gear/cluster_bombs.png',
     name: 'Cluster Bombs',
     shortName: 'Cluster',
     crate: 'warheads',
@@ -127,6 +136,7 @@ export const GEAR_ITEMS = {
   },
   warhead_core: {
     id: 'warhead_core',
+    image: './assets/gear/warhead_core.png',
     name: 'Warhead Core',
     shortName: 'Core',
     crate: 'warheads',
@@ -141,6 +151,7 @@ export const GEAR_ITEMS = {
   // —— ACCESSORIES (permanent unlocks) ——
   mine_detector: {
     id: 'mine_detector',
+    image: './assets/gear/mine_detector.png',
     name: 'Mine Detector',
     shortName: 'Detector',
     crate: 'accessories',
@@ -152,6 +163,7 @@ export const GEAR_ITEMS = {
   },
   tuned_engines: {
     id: 'tuned_engines',
+    image: './assets/gear/tuned_engines.png',
     name: 'Tuned Engines',
     shortName: 'Engines',
     crate: 'accessories',
@@ -163,6 +175,7 @@ export const GEAR_ITEMS = {
   },
   reinforced_plating: {
     id: 'reinforced_plating',
+    image: './assets/gear/reinforced_plating.png',
     name: 'Reinforced Plating',
     shortName: 'Plating',
     crate: 'accessories',
@@ -174,6 +187,7 @@ export const GEAR_ITEMS = {
   },
   quick_loader: {
     id: 'quick_loader',
+    image: './assets/gear/quick_loader.png',
     name: 'Quick Loader',
     shortName: 'Q-Loader',
     crate: 'accessories',
@@ -185,6 +199,7 @@ export const GEAR_ITEMS = {
   },
   extended_mag: {
     id: 'extended_mag',
+    image: './assets/gear/extended_mag.png',
     name: 'Extended Magazine',
     shortName: 'Ext Mag',
     crate: 'accessories',
@@ -196,6 +211,7 @@ export const GEAR_ITEMS = {
   },
   bomb_bay_ext: {
     id: 'bomb_bay_ext',
+    image: './assets/gear/bomb_bay_ext.png',
     name: 'Expanded Bomb Bay',
     shortName: 'Bomb Bay',
     crate: 'accessories',
@@ -207,6 +223,7 @@ export const GEAR_ITEMS = {
   },
   heavy_tubes: {
     id: 'heavy_tubes',
+    image: './assets/gear/heavy_tubes.png',
     name: 'Heavy Torpedo Tubes',
     shortName: 'Tubes',
     crate: 'accessories',
@@ -218,6 +235,7 @@ export const GEAR_ITEMS = {
   },
   targeting_scope: {
     id: 'targeting_scope',
+    image: './assets/gear/targeting_scope.png',
     name: 'Targeting Scope',
     shortName: 'Scope',
     crate: 'accessories',
@@ -229,6 +247,7 @@ export const GEAR_ITEMS = {
   },
   jump_boosters: {
     id: 'jump_boosters',
+    image: './assets/gear/jump_boosters.png',
     name: 'Jump Boosters',
     shortName: 'Boosters',
     crate: 'accessories',
@@ -240,6 +259,7 @@ export const GEAR_ITEMS = {
   },
   reactive_shield: {
     id: 'reactive_shield',
+    image: './assets/gear/reactive_shield.png',
     name: 'Reactive Shield',
     shortName: 'Shield',
     crate: 'accessories',
@@ -274,8 +294,9 @@ export function rollItemFromPool(pool, weightBoost = {}) {
   return weighted[weighted.length - 1].item;
 }
 
-/** Simple canvas tile for gear drops */
+/** Prefer unique static art; canvas fallback if image missing. */
 export function gearItemImageDataUrl(item, size = 256) {
+  if (item?.image) return item.image;
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext('2d');
