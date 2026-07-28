@@ -14,7 +14,8 @@
   {
     "imports": {
       "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+      "mqtt": "https://cdn.jsdelivr.net/npm/mqtt@5.14.1/+esm"
     }
   }
   </script>
@@ -39,18 +40,58 @@
   <div id="app">
     <canvas id="game-canvas"></canvas>
 
+    <!-- FIRST-TIME / RETURN OPERATOR -->
+    <section id="screen-auth" class="screen">
+      <div class="menu-atmosphere" aria-hidden="true"></div>
+      <div class="menu-grain" aria-hidden="true"></div>
+      <div class="auth-shell">
+        <p class="brand-mark auth-brand">VEHICLE STRIKE</p>
+        <div class="auth-card" id="auth-create-panel">
+          <p class="auth-kicker">OPERATOR ENLISTMENT</p>
+          <h2>Create your callsign</h2>
+          <p class="auth-lead">First time only on this device. Optional password locks your local profile. Online multiplayer uses your callsign when others are on the site.</p>
+          <label class="auth-field">
+            <span>Callsign</span>
+            <input id="auth-create-user" type="text" maxlength="16" autocomplete="username" placeholder="e.g. Ashwake" />
+          </label>
+          <label class="auth-field">
+            <span>Password <em>(optional)</em></span>
+            <input id="auth-create-pass" type="password" maxlength="64" autocomplete="new-password" placeholder="Leave blank if you prefer" />
+          </label>
+          <p class="auth-error hidden" id="auth-create-error"></p>
+          <button class="btn btn-primary" id="btn-auth-create">ENLIST</button>
+        </div>
+        <div class="auth-card hidden" id="auth-login-panel">
+          <p class="auth-kicker">WELCOME BACK</p>
+          <h2>Confirm operator</h2>
+          <p class="auth-lead">Sign in with the callsign saved on this browser to enter the fleet.</p>
+          <label class="auth-field">
+            <span>Callsign</span>
+            <input id="auth-login-user" type="text" maxlength="16" autocomplete="username" />
+          </label>
+          <label class="auth-field" id="auth-login-pass-wrap">
+            <span>Password</span>
+            <input id="auth-login-pass" type="password" maxlength="64" autocomplete="current-password" />
+          </label>
+          <p class="auth-error hidden" id="auth-login-error"></p>
+          <button class="btn btn-primary" id="btn-auth-login">ENTER</button>
+        </div>
+      </div>
+    </section>
+
     <!-- MAIN MENU -->
-    <section id="screen-menu" class="screen active">
+    <section id="screen-menu" class="screen">
       <div class="menu-atmosphere" aria-hidden="true"></div>
       <div class="menu-grain" aria-hidden="true"></div>
       <nav class="menu-top">
-        <span class="menu-top-label">ONLINE · GITHUB PAGES BUILD</span>
+        <span class="menu-top-label" id="menu-online-label">ONLINE · CONNECTING…</span>
         <span class="menu-top-ver" id="menu-wallet">BANK $3,500</span>
       </nav>
       <div class="menu-hero">
         <p class="brand-mark">VEHICLE STRIKE</p>
+        <p class="menu-callsign" id="menu-callsign">OPERATOR</p>
         <h1 class="menu-headline">temporary proof of concept</h1>
-        <p class="menu-sub">Fully playable 3D tactical combat. Earn bank credits, buy tank/ship/jet crates, warheads & accessories, unbox upgrades, equip your loadout.</p>
+        <p class="menu-sub">Fully playable 3D tactical combat. Earn bank credits, buy tank/ship/jet crates, warheads & accessories, unbox upgrades, equip your loadout. Catholic Trivia gates deploy, reloads, and purchases. When two or more operators are online, team modes share a live matchmaking board.</p>
         <div class="menu-cta">
           <button class="btn btn-primary" id="btn-play">DEPLOY</button>
           <button class="btn btn-ghost" id="btn-shop">ARMORY</button>
@@ -66,6 +107,14 @@
           <span>Low poly <em>(save GPU)</em></span>
         </label>
       </div>
+      <aside class="online-panel" id="online-panel" aria-live="polite">
+        <header>
+          <strong>OPERATORS ONLINE</strong>
+          <em id="online-count">0</em>
+        </header>
+        <ul id="online-list" class="online-list"></ul>
+        <p class="online-hint" id="online-hint">Waiting for the relay…</p>
+      </aside>
       <div class="menu-strip">
         <div class="strip-item"><span>TANK</span><em>Ground dominance</em></div>
         <div class="strip-item"><span>JET</span><em>Air superiority</em></div>
@@ -78,8 +127,10 @@
       <div class="panel-card wide">
         <h2>OPERATIONS BRIEFING</h2>
         <ul class="brief-list">
+          <li><strong>Account</strong> — First visit: create a callsign (optional password). That name is your multiplayer identity on this device.</li>
           <li><strong>Catholic Trivia</strong> — Before DEPLOY, answer 5 questions (need 4 correct). Reloading and buying also ask a quick faith check; a correct answer when short on credits can grant alms.</li>
-          <li><strong>Matchmaking</strong> — Team modes search for players for 60 seconds, then fill empty seats with AI.</li>
+          <li><strong>Matchmaking</strong> — Team modes search for live operators for 60 seconds. If others are on the site with the same map/mode, you share one lobby under real callsigns. Empty seats become AI.</li>
+          <li><strong>Buy vote</strong> — When two or more humans are in a match, vote during buy phase to extend it (up to 2:00). Majority agreement applies.</li>
           <li><strong>Fleet crates</strong> — Tank, Ship, and Jet cases only drop that domain (plus Scout, Skiff, Wasp starters). Equip them in Inventory → Fleet. Arsenal only shows what you own.</li>
           <li><strong>Warheads case</strong> — Bullets, magazines, bombs (jets), torpedoes (ships), landmines, and more. Equip up to 4 in Inventory → Warheads; they load when a match starts.</li>
           <li><strong>Accessories case</strong> — Permanent mods: mine detector, tuned engines, plating, quick loader, extended mag, bomb bay, torpedo tubes, targeting scope, jump boosters, reactive shield.</li>
@@ -147,7 +198,7 @@
 
         <div id="team-pick" class="team-pick">
           <p class="team-kicker">CHOOSE YOUR FLEET</p>
-          <p class="team-lead">Attack or defend. Matchmaking finds operators for sixty seconds — empty seats become AI.</p>
+          <p class="team-lead">Attack or defend. Live operators on the same theater join your board. Sixty seconds to assemble — empty seats become AI.</p>
           <div class="team-planes">
             <button type="button" class="team-plane raiders" id="pick-raiders">
               <span class="team-plane-bg" aria-hidden="true"></span>
@@ -310,6 +361,18 @@
       </div>
 
       <div class="hud-objective" id="hud-objective"></div>
+
+      <div id="buy-vote" class="buy-vote hidden" aria-live="polite">
+        <p class="buy-vote-title">BUY TIMER VOTE</p>
+        <p class="buy-vote-lead">Humans can extend the buy phase (max 2:00)</p>
+        <div class="buy-vote-opts" id="buy-vote-opts">
+          <button type="button" data-sec="30">0:30</button>
+          <button type="button" data-sec="60">1:00</button>
+          <button type="button" data-sec="90">1:30</button>
+          <button type="button" data-sec="120">2:00</button>
+        </div>
+        <p class="buy-vote-status" id="buy-vote-status">Waiting for votes…</p>
+      </div>
 
       <div class="hud-bottom">
         <div class="hud-health">

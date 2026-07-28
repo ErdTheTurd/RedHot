@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {
-  PHASE, BUY_TIME, ROUND_TIME, BOMB_TIME, DEFUSE_TIME, PLANT_TIME,
+  PHASE, BUY_TIME, BUY_TIME_MAX, ROUND_TIME, BOMB_TIME, DEFUSE_TIME, PLANT_TIME,
   ROUNDS_TO_WIN, START_MONEY, MAX_MONEY, WIN_REWARD, LOSS_REWARDS,
   KILL_REWARD, PLANT_REWARD, BOT_NAMES, VEHICLES, GEAR, TEAMS,
 } from './config.js';
@@ -18,7 +18,7 @@ import { MODES } from './progression.js';
 import { resolveQuality } from './graphics.js';
 
 export class Game {
-  constructor({ scene, camera, input, ui, inventory, lighting = null, quality = null, onQualityChange = null }) {
+  constructor({ scene, camera, input, ui, inventory, lighting = null, quality = null, onQualityChange = null, net = null }) {
     this.scene = scene;
     this.camera = camera;
     this.input = input;
@@ -27,6 +27,13 @@ export class Game {
     this.lighting = lighting;
     this.quality = quality || resolveQuality();
     this.onQualityChange = onQualityChange;
+    this.net = net;
+    this.netEnabled = false;
+    this.isNetHost = false;
+    this.netHumans = [];
+    this.buyVotes = {};
+    this._netAcc = 0;
+    this._seenEvents = new Set();
     this.mapId = 'ironfront';
     this.modeId = 'strike';
     this.mode = MODES.strike;
@@ -123,6 +130,15 @@ export class Game {
     this.waveKills = 0;
     this.lossStreak = { raiders: 0, sentinels: 0 };
     this.roundNumber = 0;
+    this.buyVotes = {};
+    this._seenEvents = new Set();
+    this._netAcc = 0;
+
+    const netOpts = opts.net || null;
+    this.netEnabled = !!(netOpts?.enabled && this.net);
+    this.isNetHost = !!(netOpts?.isHost);
+    this.netHumans = Array.isArray(netOpts?.humans) ? netOpts.humans : [];
+    this._myNetId = netOpts?.clientId || this.net?.clientId || null;
 
     for (const u of this.units) this.scene.remove(u.mesh);
     this.units = [];
@@ -134,9 +150,12 @@ export class Game {
     const fleet = (this.inventory?.matchLoadout?.() || [])
       .filter((id) => id && (!this.inventory || this.inventory.ownsVehicle(id)));
     const primary = fleet[0] || 'scout_tracker';
+    const playerName = this.mode.freeRoam
+      ? 'Vigilante'
+      : (this.inventory?.profile?.callsign || 'You');
     this.player = new Unit({
       id: 'player',
-      name: this.mode.freeRoam ? 'Vigilante' : 'You',
+      name: playerName,
       team,
       isPlayer: true,
       spawn: team === TEAMS.RAIDERS ? spawnsR[0] : spawnsS[0],
@@ -144,6 +163,7 @@ export class Game {
       getSkin: (vid) => this.inventory?.getEquipped(vid) || null,
       getGroundY: groundY,
     });
+    this.player.netId = this._myNetId;
     // Equipped fleet only — never put locked craft in loadout slots
     this.player.loadout = [
       fleet[0] || primary,
@@ -162,7 +182,7 @@ export class Game {
 
     if (this.mode.bots === 'full') {
       const roster = opts.roster || null;
-      const addBot = (id, name, teamKey, spawn) => {
+      const addBot = (id, name, teamKey, spawn, extra = {}) => {
         const u = new Unit({
           id,
           name,
@@ -172,6 +192,10 @@ export class Game {
           getGroundY: groundY,
         });
         u.money = START_MONEY;
+        if (extra.netId) {
+          u.netId = extra.netId;
+          u.isRemote = true;
+        }
         this.scene.add(u.mesh);
         this.units.push(u);
       };
@@ -181,24 +205,30 @@ export class Game {
         let sSpawn = team === TEAMS.SENTINELS ? 1 : 0;
         roster.raiders.forEach((slot, i) => {
           if (slot.kind === 'you') return;
+          if (slot.clientId && slot.clientId === this._myNetId) return;
           const spawn = spawnsR[rSpawn % spawnsR.length];
           rSpawn += 1;
+          const isHuman = slot.kind === 'human' && slot.clientId;
           addBot(
-            `r${i}`,
+            isHuman ? `h_${String(slot.clientId).slice(0, 8)}` : `r${i}`,
             slot.name || BOT_NAMES.raiders[i % BOT_NAMES.raiders.length],
             TEAMS.RAIDERS,
-            spawn
+            spawn,
+            isHuman ? { netId: slot.clientId } : {}
           );
         });
         roster.sentinels.forEach((slot, i) => {
           if (slot.kind === 'you') return;
+          if (slot.clientId && slot.clientId === this._myNetId) return;
           const spawn = spawnsS[sSpawn % spawnsS.length];
           sSpawn += 1;
+          const isHuman = slot.kind === 'human' && slot.clientId;
           addBot(
-            `s${i}`,
+            isHuman ? `h_${String(slot.clientId).slice(0, 8)}` : `s${i}`,
             slot.name || BOT_NAMES.sentinels[i % BOT_NAMES.sentinels.length],
             TEAMS.SENTINELS,
-            spawn
+            spawn,
+            isHuman ? { netId: slot.clientId } : {}
           );
         });
       } else {
@@ -236,6 +266,217 @@ export class Game {
     this.beginRound();
     // After first round reset so consumable bombs/mags aren't wiped by refill
     this.applyPlayerGear();
+    this._wireNetHandlers();
+  }
+
+  _wireNetHandlers() {
+    if (!this.netEnabled || !this.net || this._netWired) return;
+    this._netWired = true;
+    this._unsubNet = [
+      this.net.on('unit', (data) => this._onNetUnit(data)),
+      this.net.on('matchMeta', (data) => this._onNetMeta(data)),
+      this.net.on('event', (data) => this._onNetEvent(data)),
+    ];
+  }
+
+  _tearDownNet() {
+    if (Array.isArray(this._unsubNet)) {
+      for (const off of this._unsubNet) off?.();
+    }
+    this._unsubNet = [];
+    this._netWired = false;
+    this.netEnabled = false;
+    this.netHumans = [];
+    this.buyVotes = {};
+    try {
+      this.net?.leaveLobby?.();
+      this.net?.setStatus?.('menu', {});
+    } catch {
+      /* ignore */
+    }
+  }
+
+  _serializeUnit(u) {
+    return {
+      id: u.id,
+      netId: u.netId || null,
+      name: u.name,
+      team: u.team,
+      alive: u.alive,
+      hp: u.hp,
+      armor: u.armor,
+      money: u.money,
+      kills: u.kills,
+      deaths: u.deaths,
+      yaw: u.yaw,
+      pitch: u.pitch,
+      vehicleId: u.vehicle?.id || u.loadout?.[0],
+      x: u.mesh.position.x,
+      y: u.mesh.position.y,
+      z: u.mesh.position.z,
+      flightAlt: u.flightAlt || 0,
+    };
+  }
+
+  _applyUnitState(u, s, lerp = 0.35) {
+    if (!u || !s) return;
+    if (typeof s.yaw === 'number') u.yaw = s.yaw;
+    if (typeof s.pitch === 'number') u.pitch = s.pitch;
+    if (typeof s.hp === 'number') u.hp = s.hp;
+    if (typeof s.armor === 'number') u.armor = s.armor;
+    if (typeof s.money === 'number') u.money = s.money;
+    if (typeof s.kills === 'number') u.kills = s.kills;
+    if (typeof s.deaths === 'number') u.deaths = s.deaths;
+    if (typeof s.alive === 'boolean') u.alive = s.alive;
+    if (typeof s.flightAlt === 'number') u.flightAlt = s.flightAlt;
+    if (s.vehicleId && u.vehicle?.id !== s.vehicleId && u.loadout) {
+      const idx = u.loadout.indexOf(s.vehicleId);
+      if (idx >= 0) {
+        u.activeSlot = idx;
+        u._swapMesh?.();
+      }
+    }
+    if (typeof s.x === 'number') {
+      u.mesh.position.x += (s.x - u.mesh.position.x) * lerp;
+      u.mesh.position.y += (s.y - u.mesh.position.y) * lerp;
+      u.mesh.position.z += (s.z - u.mesh.position.z) * lerp;
+    }
+    u.mesh.rotation.y = u.yaw;
+    u.mesh.visible = !!u.alive;
+  }
+
+  _onNetUnit(data) {
+    if (!this.running || !data) return;
+    if (data.aiBundle && Array.isArray(data.units)) {
+      for (const s of data.units) {
+        const u = this.units.find((x) => x.id === s.id && !x.isPlayer && !x.isRemote);
+        if (u) this._applyUnitState(u, s, 0.45);
+      }
+      return;
+    }
+    if (data.clientId && data.clientId === this._myNetId) return;
+    const u = this.units.find((x) => x.netId && x.netId === data.clientId);
+    if (u) this._applyUnitState(u, data, 0.5);
+  }
+
+  _onNetMeta(data) {
+    if (!this.running || !data || this.isNetHost) return;
+    if (typeof data.timer === 'number') this.timer = data.timer;
+    if (data.phase) {
+      this.phase = data.phase;
+      this.phaseLabel = data.phaseLabel || data.phase.toUpperCase();
+    }
+    if (data.score) this.score = { ...data.score };
+    if (data.frags) this.frags = { ...data.frags };
+    if (data.buyVotes) this.buyVotes = { ...data.buyVotes };
+    if (data.bomb) {
+      this.bomb.planted = !!data.bomb.planted;
+      this.bomb.timer = data.bomb.timer ?? this.bomb.timer;
+    }
+  }
+
+  _onNetEvent(data) {
+    if (!this.running || !data?.type) return;
+    const eid = data.eventId || `${data.type}:${data.ts}:${data.from}`;
+    if (this._seenEvents.has(eid)) return;
+    this._seenEvents.add(eid);
+    if (this._seenEvents.size > 200) {
+      const first = this._seenEvents.values().next().value;
+      this._seenEvents.delete(first);
+    }
+
+    if (data.type === 'buyVote') {
+      this.buyVotes[data.from] = data.seconds;
+      this._resolveBuyVotes(false);
+      this.ui.renderBuyVote?.();
+      return;
+    }
+
+    if (data.type === 'buyExtend' && typeof data.seconds === 'number') {
+      if (this.phase === PHASE.BUY) {
+        this.timer = Math.max(this.timer, Math.min(BUY_TIME_MAX, data.seconds));
+        this.ui.toast?.(`Buy phase set to ${Math.round(this.timer)}s`, 2200);
+        this.ui.showBanner?.('BUY EXTENDED', `${Math.round(this.timer)} seconds`);
+      }
+      return;
+    }
+
+    if (data.type === 'damage' && data.targetNetId === this._myNetId && this.player) {
+      const attacker = this.units.find((u) => u.netId === data.from) || this.player;
+      this.player.takeDamage(data.amount || 0, attacker, data.pen ?? 1);
+    }
+  }
+
+  castBuyVote(seconds) {
+    const sec = Math.min(BUY_TIME_MAX, Math.max(30, Number(seconds) || 30));
+    if (!this.netEnabled || (this.netHumans?.length || 0) < 2) return;
+    if (this.phase !== PHASE.BUY) return;
+    this.buyVotes[this._myNetId] = sec;
+    this.net?.publishEvent?.({
+      type: 'buyVote',
+      eventId: `vote:${this._myNetId}:${this.roundNumber}:${sec}`,
+      seconds: sec,
+    });
+    this._resolveBuyVotes(true);
+  }
+
+  _resolveBuyVotes(broadcast) {
+    const humans = this.netHumans || [];
+    if (humans.length < 2 || this.phase !== PHASE.BUY) return;
+    const tallies = {};
+    for (const h of humans) {
+      const v = this.buyVotes[h.clientId];
+      if (v) tallies[v] = (tallies[v] || 0) + 1;
+    }
+    const need = Math.max(2, Math.ceil(humans.length / 2));
+    let winner = null;
+    let best = 0;
+    for (const [sec, n] of Object.entries(tallies)) {
+      if (n >= need && n >= best) {
+        best = n;
+        winner = Number(sec);
+      }
+    }
+    if (!winner) return;
+    if (this.timer < winner) {
+      this.timer = Math.min(BUY_TIME_MAX, winner);
+      this.ui.toast?.(`Buy phase extended to ${winner}s`, 2200);
+      this.ui.showBanner?.('BUY EXTENDED', `${winner} seconds`);
+      if (broadcast && this.isNetHost) {
+        this.net?.publishEvent?.({
+          type: 'buyExtend',
+          eventId: `ext:${this.roundNumber}:${winner}`,
+          seconds: winner,
+        });
+      }
+    }
+  }
+
+  _publishNet(dt) {
+    if (!this.netEnabled || !this.net || !this.player) return;
+    this._netAcc += dt;
+    if (this._netAcc < 0.08) return;
+    this._netAcc = 0;
+    this.net.publishUnit(this._serializeUnit(this.player));
+    if (this.isNetHost) {
+      const ai = this.units
+        .filter((u) => !u.isPlayer && !u.isRemote)
+        .map((u) => this._serializeUnit(u));
+      this.net.publishAiUnits(ai);
+      this.net.publishMatchMeta({
+        phase: this.phase,
+        phaseLabel: this.phaseLabel,
+        timer: this.timer,
+        score: this.score,
+        frags: this.frags,
+        buyVotes: this.buyVotes,
+        bomb: {
+          planted: this.bomb.planted,
+          timer: this.bomb.timer,
+        },
+        roundNumber: this.roundNumber,
+      });
+    }
   }
 
   /** Apply accessories + equipped warheads consumables to the player for this match. */
@@ -272,6 +513,7 @@ export class Game {
       this.phase = PHASE.BUY;
       this.phaseLabel = 'BUY';
       this.timer = BUY_TIME;
+      this.buyVotes = {};
     }
     this.clearBomb();
     this.clearMines();
@@ -447,6 +689,7 @@ export class Game {
       setTimeout(() => {
         this.running = false;
         this._finishing = false;
+        this._tearDownNet();
         this.ui.hideAllScreens();
         document.getElementById('hud').classList.add('hidden');
         this.input.exitLock();
@@ -1309,6 +1552,19 @@ export class Game {
               hit = true;
               break;
             }
+            if (u.isRemote && this.netEnabled && u.netId) {
+              this.net.publishEvent({
+                type: 'damage',
+                eventId: `dmg:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+                targetNetId: u.netId,
+                amount: p.damage,
+                pen: p.pen,
+              });
+              if (p.owner.isPlayer) SFX.hit();
+              this.effects.push(spawnImpact(this.scene, p.pos.clone(), p.heavy));
+              hit = true;
+              break;
+            }
             const result = u.takeDamage(p.damage, p.owner, p.pen);
             if (result.lastStand && u.isPlayer) this.ui.toast('Reactive shield saved you!', 1800);
             if (p.owner.isPlayer && result.dmg > 0) SFX.hit();
@@ -1438,41 +1694,45 @@ export class Game {
   update(dt) {
     if (!this.running) return;
 
-    // phase timer
+    // phase timer (host or offline owns the clock; clients follow match meta)
     if (this.phase !== PHASE.END && !this.mode?.freeRoam) {
-      this.timer -= dt;
-      if (this.phase === PHASE.BUY && this.timer <= 0) {
-        this.phase = PHASE.LIVE;
-        this.phaseLabel = 'LIVE';
-        this.timer = ROUND_TIME;
-        this.closeBuyMenu();
-        this.ui.showBanner('FIGHT', `Round ${this.roundNumber}`);
-        this.ui.toast('Weapons free');
-      } else if (this.phase === PHASE.LIVE && this.timer <= 0) {
-        if (this.bomb.planted) {
-          // bomb phase overrides
-        } else if (this.mode?.fragLimit) {
-          const rf = this.frags.raiders || 0;
-          const sf = this.frags.sentinels || 0;
-          if (rf === sf) this.endRound(TEAMS.SENTINELS, 'Time — draw goes to defense');
-          else this.endRound(rf > sf ? TEAMS.RAIDERS : TEAMS.SENTINELS, 'Time expired');
-        } else if (this.mode?.bots === 'waves') {
-          this.endRound(TEAMS.SENTINELS, 'Siege overrun — time expired');
-        } else if (this.mode?.plant !== false) {
-          this.endRound(TEAMS.SENTINELS, 'Time expired — sites held');
+      if (!this.netEnabled || this.isNetHost) {
+        this.timer -= dt;
+        if (this.phase === PHASE.BUY && this.timer <= 0) {
+          this.phase = PHASE.LIVE;
+          this.phaseLabel = 'LIVE';
+          this.timer = ROUND_TIME;
+          this.closeBuyMenu();
+          this.ui.showBanner('FIGHT', `Round ${this.roundNumber}`);
+          this.ui.toast('Weapons free');
+        } else if (this.phase === PHASE.LIVE && this.timer <= 0) {
+          if (this.bomb.planted) {
+            // bomb phase overrides
+          } else if (this.mode?.fragLimit) {
+            const rf = this.frags.raiders || 0;
+            const sf = this.frags.sentinels || 0;
+            if (rf === sf) this.endRound(TEAMS.SENTINELS, 'Time — draw goes to defense');
+            else this.endRound(rf > sf ? TEAMS.RAIDERS : TEAMS.SENTINELS, 'Time expired');
+          } else if (this.mode?.bots === 'waves') {
+            this.endRound(TEAMS.SENTINELS, 'Siege overrun — time expired');
+          } else if (this.mode?.plant !== false) {
+            this.endRound(TEAMS.SENTINELS, 'Time expired — sites held');
+          }
+        } else if (this.phase === PHASE.BOMB) {
+          this.bomb.timer = this.timer;
+          this._beepAcc += dt;
+          const interval = Math.max(0.15, this.bomb.timer / 25);
+          if (this._beepAcc >= interval) {
+            this._beepAcc = 0;
+            SFX.bombBeep();
+          }
+          if (this.timer <= 0) {
+            this.ui.showBanner('WARHEAD DETONATED', 'Site destroyed');
+            this.endRound(TEAMS.RAIDERS, 'Warhead detonated');
+          }
         }
       } else if (this.phase === PHASE.BOMB) {
         this.bomb.timer = this.timer;
-        this._beepAcc += dt;
-        const interval = Math.max(0.15, this.bomb.timer / 25);
-        if (this._beepAcc >= interval) {
-          this._beepAcc = 0;
-          SFX.bombBeep();
-        }
-        if (this.timer <= 0) {
-          this.ui.showBanner('WARHEAD DETONATED', 'Site destroyed');
-          this.endRound(TEAMS.RAIDERS, 'Warhead detonated');
-        }
       }
     }
 
@@ -1494,13 +1754,16 @@ export class Game {
 
     this.updatePlayer(dt);
     for (const u of this.units) {
-      if (!u.isPlayer) updateBot(u, this, dt);
+      if (u.isPlayer || u.isRemote) continue;
+      if (this.netEnabled && !this.isNetHost) continue;
+      updateBot(u, this, dt);
     }
     this.updateMines(dt);
     this.updateProjectiles(dt);
     this.updateDeathFalls(dt);
     this.processRespawns();
     this.effects = updateVfxList(this.effects, dt, this.scene);
+    this._publishNet(dt);
 
     if (this.bomb.mesh) {
       this.bomb.mesh.rotation.y += dt * 2;
