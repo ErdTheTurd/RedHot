@@ -281,12 +281,12 @@ export class Game {
 
     if (this.mode?.freeRoam) {
       this.ui.showBanner('VIGILANTE', `${this.mode.name} · free roam`);
-      this.ui.toast('Free roam — Hold RMB to look · Esc extract · F gun · B bombs · T torpedoes · X landmine');
+      this.ui.toast('Free roam — Esc extract · F gun · B bombs · T torpedoes · X landmine');
     } else if (this.mode?.buyPhase === false) {
       this.ui.showBanner(this.mode.name.toUpperCase(), 'Fight');
     } else {
       this.ui.showBanner(`ROUND ${this.roundNumber}`, this.mode?.name || 'Buy phase');
-      this.ui.toast('Hold RMB to look/turn · B arsenal · X landmine');
+      this.ui.toast('Press B to open arsenal · X plant landmine');
     }
     if (!this.buyOpen && this.player.alive) {
       // auto hint only
@@ -911,13 +911,10 @@ export class Game {
     if (this.buyOpen || this.input.cmdMode) return;
 
     const { dx, dy } = this.input.consumeMouseDelta();
-    // Roblox-style: turn / look only while holding right mouse button
-    if (this.input.mouse.right) {
-      const sens = 0.0024;
-      p.yaw -= dx * sens;
-      p.pitch -= dy * sens;
-      p.pitch = Math.max(-0.5, Math.min(0.85, p.pitch));
-    }
+    const sens = 0.0024;
+    p.yaw -= dx * sens;
+    p.pitch -= dy * sens;
+    p.pitch = Math.max(-0.5, Math.min(0.85, p.pitch));
     this.camYaw = p.yaw;
     this.camPitch = 0.4 + p.pitch * 0.35;
     p.mesh.rotation.y = p.yaw;
