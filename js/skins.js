@@ -1,6 +1,7 @@
-/** Skins (shop cosmetics) + cases/keys that unlock fleet vehicles */
+/** Skin catalog, crates, keys — fleet unlocks + warheads/accessories */
 
 import { VEHICLES } from './config.js';
+import { warheadsPool, accessoriesPool, rollItemFromPool } from './gearItems.js';
 
 export const RARITY = {
   consumer: { id: 'consumer', label: 'Consumer Grade', color: '#b0c3d9', weight: 79.92 },
@@ -125,6 +126,22 @@ export const KEYS = {
     desc: 'Opens Apex Cases — higher odds at rare fleet craft.',
     image: './assets/keys/apex-key.png',
   },
+  warheads_key: {
+    id: 'warheads_key',
+    name: 'Warheads Case Key',
+    price: 900,
+    caseId: 'warheads_case',
+    desc: 'Opens Warheads Cases — bullets, mags, bombs, torpedoes, mines.',
+    image: './assets/keys/warheads-key.png',
+  },
+  accessories_key: {
+    id: 'accessories_key',
+    name: 'Accessories Case Key',
+    price: 1100,
+    caseId: 'accessories_case',
+    desc: 'Opens Accessories Cases — detectors, engines, scopes, and more.',
+    image: './assets/keys/accessories-key.png',
+  },
 };
 
 function vehiclesForCase(rarities, filterFn = null) {
@@ -146,6 +163,7 @@ export const CASES = {
     color: '#c45c28',
     image: './assets/cases/ironfront-case.png',
     desc: 'Unlocks unique-looking tanks, ships, and jets for your fleet.',
+    kind: 'vehicle',
     contains: () => vehiclesForCase([
       'consumer', 'industrial', 'milspec', 'restricted', 'classified', 'covert', 'extraordinary',
     ]),
@@ -158,6 +176,7 @@ export const CASES = {
     color: '#1d9bf0',
     image: './assets/cases/coastal-case.png',
     desc: 'Focused pool: ships and frontline air / land strikers.',
+    kind: 'vehicle',
     contains: () => vehiclesForCase(
       ['industrial', 'milspec', 'restricted', 'classified', 'covert', 'extraordinary'],
       (v) => v.domain === 'sea' || v.category === 'rifle' || v.style === 'hydro' || v.style === 'keel' || v.style === 'leviathan'
@@ -171,15 +190,40 @@ export const CASES = {
     color: '#e4ae39',
     image: './assets/cases/apex-case.png',
     desc: 'High-tier fleet pool. Better odds at Classified+ craft.',
+    kind: 'vehicle',
     contains: () => vehiclesForCase(['milspec', 'restricted', 'classified', 'covert', 'extraordinary']),
     weightBoost: { milspec: 1, restricted: 1.4, classified: 1.8, covert: 2.2, extraordinary: 2.5 },
+  },
+  warheads_case: {
+    id: 'warheads_case',
+    name: 'Warheads Case',
+    price: 400,
+    keyId: 'warheads_key',
+    color: '#ff5c5c',
+    image: './assets/cases/warheads-case.png',
+    desc: 'Ordnance upgrades: bullets, mags, bombs, torpedoes, landmines, and more.',
+    kind: 'item',
+    contains: () => warheadsPool(),
+    weightBoost: { consumer: 1, industrial: 1.1, milspec: 1.2, restricted: 1.4, classified: 1.6, covert: 1.8, extraordinary: 2 },
+  },
+  accessories_case: {
+    id: 'accessories_case',
+    name: 'Accessories Case',
+    price: 550,
+    keyId: 'accessories_key',
+    color: '#7ec8e8',
+    image: './assets/cases/accessories-case.png',
+    desc: 'Permanent vehicle mods: mine detector, engines, plating, scopes, and more.',
+    kind: 'item',
+    contains: () => accessoriesPool(),
+    weightBoost: { industrial: 1, milspec: 1.2, restricted: 1.5, classified: 1.8, covert: 2.2 },
   },
 };
 
 /** Roll a vehicle unlock from a case (not a skin). */
 export function rollVehicleFromCase(caseId) {
   const crate = CASES[caseId];
-  if (!crate) return null;
+  if (!crate || crate.kind === 'item') return null;
   let pool = crate.contains();
   // Always include crate exclusives that match rarity filters so cases feel special
   const exclusives = Object.values(VEHICLES).filter((v) => v.crateOnly);
@@ -208,6 +252,13 @@ export function rollVehicleFromCase(caseId) {
     if (r <= 0) return item.vehicle;
   }
   return weighted[weighted.length - 1].vehicle;
+}
+
+/** Roll a warheads/accessories item from an item case. */
+export function rollItemFromCase(caseId) {
+  const crate = CASES[caseId];
+  if (!crate || crate.kind !== 'item') return null;
+  return rollItemFromPool(crate.contains(), crate.weightBoost || {});
 }
 
 /** @deprecated — use rollVehicleFromCase */

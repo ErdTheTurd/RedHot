@@ -50,7 +50,7 @@
       <div class="menu-hero">
         <p class="brand-mark">VEHICLE STRIKE</p>
         <h1 class="menu-headline">temporary proof of concept</h1>
-        <p class="menu-sub">Fully playable 3D tactical combat. Earn bank credits, buy crates &amp; keys, unbox skins, equip your fleet.</p>
+        <p class="menu-sub">Fully playable 3D tactical combat. Earn bank credits, buy fleet/warheads/accessories crates, unbox upgrades, equip your loadout.</p>
         <div class="menu-cta">
           <button class="btn btn-primary" id="btn-play">DEPLOY</button>
           <button class="btn btn-ghost" id="btn-shop">ARMORY</button>
@@ -71,6 +71,9 @@
         <h2>OPERATIONS BRIEFING</h2>
         <ul class="brief-list">
           <li><strong>Fleet crates</strong> — You can only use tanks/ships/jets unlocked from cases (plus Scout, Skiff, Wasp starters). Equip them in Inventory → Fleet. Arsenal only shows what you own.</li>
+          <li><strong>Warheads case</strong> — Bullets, magazines, bombs (jets), torpedoes (ships), landmines, and more. Equip up to 4 in Inventory → Warheads; they load when a match starts.</li>
+          <li><strong>Accessories case</strong> — Permanent mods: mine detector, tuned engines, plating, quick loader, extended mag, bomb bay, torpedo tubes, targeting scope, jump boosters, reactive shield.</li>
+          <li><strong>Landmines</strong> — Plant with <em>X</em>. Hidden unless you are within ~3 units and stay still for 5 seconds (or own a Mine Detector). Your own mines stay visible.</li>
           <li><strong>Skins</strong> — Buy paint jobs separately in the Armory Skins tab, then equip in Inventory.</li>
           <li><strong>Ads</strong> — Short on bank? Watch a rewarded ad (max 5/day) when a buy fails for funds.</li>
           <li><strong>Maps</strong> — Win matches to unlock Dustfall Mesa, Frostbite Sound, and Blacksite Yard.</li>
@@ -78,9 +81,9 @@
           <li><strong>Vigilante</strong> — Solo sandbox. C opens arsenal (B drops bombs in jets). Esc to extract and cash out XP.</li>
           <li><strong>In-round credits</strong> — Buy tanks, jets, and ships during the buy phase (press B).</li>
           <li><strong>Bank</strong> — Match payouts go to your persistent bank (saved in this browser).</li>
-          <li><strong>Armory</strong> — Spend bank credits on crates and keys. Open crates for vehicle skins.</li>
-          <li><strong>Inventory</strong> — Equip skins onto vehicles. Sell duplicates back to the armory.</li>
-          <li><strong>Controls</strong> — WASD/arrows · Mouse look · <em>F gun</em> · <em>B bombs</em> (jets, live) / buy menu · <em>T torpedo</em> (ships) · Space jump (−5 ammo) · R reload · E plant/defuse · Tab score · 1–3 slots · G smoke · V EMP · <code>/give-tokens</code> · <code>/give-xp</code></li>
+          <li><strong>Armory</strong> — Spend bank credits on fleet, warheads, and accessories crates + keys.</li>
+          <li><strong>Inventory</strong> — Equip fleet, paints, warheads loadout, and view accessories.</li>
+          <li><strong>Controls</strong> — WASD/arrows · Mouse look · <em>F gun</em> · <em>B bombs</em> (jets, live) / buy menu · <em>T torpedo</em> (ships) · <em>X landmine</em> · Space jump · R reload · E plant/defuse · Tab score · 1–3 slots · G smoke · V EMP · <code>/give-tokens</code> · <code>/give-xp</code></li>
         </ul>
         <button class="btn btn-primary" id="btn-howto-back">RETURN</button>
       </div>
@@ -184,6 +187,8 @@
         <div class="meta-tabs">
           <button class="meta-tab active" data-inv-tab="vehicles">FLEET</button>
           <button class="meta-tab" data-inv-tab="skins">SKINS</button>
+          <button class="meta-tab" data-inv-tab="warheads">WARHEADS</button>
+          <button class="meta-tab" data-inv-tab="accessories">ACCESSORIES</button>
           <button class="meta-tab" data-inv-tab="cases">CASES</button>
           <button class="meta-tab" data-inv-tab="keys">KEYS</button>
         </div>
@@ -292,7 +297,7 @@
 
       <div class="hud-slots" id="hud-slots"></div>
       <canvas id="minimap" class="minimap" width="160" height="160"></canvas>
-      <div class="hud-hint" id="hud-hint">WASD/Arrows · F Gun · B Bomb / Buy · T Torpedo · Space Jump · R Reload · E Plant · Esc Extract</div>
+      <div class="hud-hint" id="hud-hint">WASD/Arrows · F Gun · B Bomb / Buy · T Torpedo · X Mine · Space Jump · R Reload · E Plant · Esc Extract</div>
     </section>
 
     <!-- SCOREBOARD -->

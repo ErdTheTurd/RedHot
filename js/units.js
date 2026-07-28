@@ -28,6 +28,14 @@ export class Unit {
     this.ammo = {};
     this.bombs = 0;
     this.torpedoes = 0;
+    this.landmines = 0;
+    this.matchMods = null;
+    this.accMods = null;
+    this.mineDetector = false;
+    this.lastStand = false;
+    this.lastStandUsed = false;
+    this.jumpAmmoCost = 5;
+    this.stillT = 0;
     this.secondaryCooldown = 0;
     this.yaw = spawn?.yaw ?? 0;
     this.pitch = 0;
@@ -60,18 +68,58 @@ export class Unit {
 
   _refillOrdnance(def) {
     const d = def || this.vehicle;
-    this.bombs = d.bombs || 0;
-    this.torpedoes = d.torpedoes || 0;
+    const bombCap = (d.bombs || 0) + (this.accMods?.bombCap || 0);
+    const torpCap = (d.torpedoes || 0) + (this.accMods?.torpedoCap || 0);
+    this.bombs = bombCap;
+    this.torpedoes = torpCap;
   }
 
   get vehicle() {
     return VEHICLES[this.loadout[this.activeSlot]] || VEHICLES[this.loadout[0]];
   }
 
+  magSizeFor(vid) {
+    const d = VEHICLES[vid] || this.vehicle;
+    return (d?.magSize || 0) + (this.accMods?.magBonus || 0);
+  }
+
+  /** Permanent accessory mods (re-applied each round). */
+  applyAccessories(acc) {
+    this.accMods = acc || null;
+    this.mineDetector = !!acc?.mineDetector;
+    this.lastStand = !!acc?.lastStand;
+    this.jumpAmmoCost = acc?.jumpAmmoCost != null ? acc.jumpAmmoCost : 5;
+    if (acc?.startArmor) this.armor = Math.max(this.armor, acc.startArmor);
+  }
+
+  /**
+   * One-shot warheads loadout for this match (ammo / ordnance / damage).
+   * Call after accessories so mag bonuses apply.
+   */
+  applyMatchConsumables(mods) {
+    this.matchMods = mods || null;
+    if (!mods) return;
+    this.landmines = (this.landmines || 0) + (mods.landmines || 0);
+    for (const id of this.loadout) {
+      if (!id) continue;
+      const d = VEHICLES[id];
+      this._ensureAmmo(id);
+      const mag = this.magSizeFor(id);
+      if (mods.fullReload) {
+        this.ammo[id].mag = mag;
+        this.ammo[id].reserve = Math.max(this.ammo[id].reserve, d.reserves);
+      }
+      this.ammo[id].reserve += (mods.reserve || 0) + (mods.mags || 0) * mag;
+    }
+    this.bombs = (this.bombs || 0) + (mods.bombs || 0);
+    this.torpedoes = (this.torpedoes || 0) + (mods.torpedoes || 0);
+  }
+
   _ensureAmmo(vid) {
     if (!this.ammo[vid]) {
       const d = VEHICLES[vid];
-      this.ammo[vid] = { mag: d.magSize, reserve: d.reserves };
+      const mag = this.magSizeFor(vid);
+      this.ammo[vid] = { mag, reserve: d.reserves };
     }
   }
 
@@ -171,9 +219,10 @@ export class Unit {
     if (this.vehicle.domain === 'air') return { ok: false, reason: 'Jets stay airborne' };
     const ammo = this.ammo[this.vehicle.id];
     if (!ammo) return { ok: false, reason: 'No ammo' };
+    const cost = this.jumpAmmoCost || 5;
     const total = ammo.mag + ammo.reserve;
-    if (total < 5) return { ok: false, reason: 'Need 5 rounds to jump' };
-    let left = 5;
+    if (total < cost) return { ok: false, reason: `Need ${cost} rounds to jump` };
+    let left = cost;
     const fromMag = Math.min(ammo.mag, left);
     ammo.mag -= fromMag;
     left -= fromMag;
@@ -181,17 +230,19 @@ export class Unit {
     this.vy = this.vehicle.domain === 'sea' ? 11 : 13;
     this.grounded = false;
     this.jumpCooldown = 0.35;
-    return { ok: true };
+    return { ok: true, cost };
   }
 
   resetForRound(spawn) {
     this.alive = true;
     this.hp = 100;
+    this.lastStandUsed = false;
+    this.stillT = 0;
     for (const id of this.loadout) {
       if (!id) continue;
       const d = VEHICLES[id];
       this._ensureAmmo(id);
-      this.ammo[id].mag = d.magSize;
+      this.ammo[id].mag = this.magSizeFor(id);
       this.ammo[id].reserve = Math.max(this.ammo[id].reserve, Math.floor(d.reserves * 0.5));
     }
     this.hasBomb = false;
@@ -211,6 +262,9 @@ export class Unit {
     this.mesh.visible = true;
     this._swapMesh();
     this._refillOrdnance();
+    if (this.accMods) {
+      this.applyAccessories(this.accMods);
+    }
     this._adjustHeight();
   }
 
@@ -225,6 +279,11 @@ export class Unit {
     }
     this.hp -= dmg;
     if (this.hp <= 0) {
+      if (this.lastStand && !this.lastStandUsed) {
+        this.hp = 1;
+        this.lastStandUsed = true;
+        return { killed: false, dmg, lastStand: true };
+      }
       this.hp = 0;
       this.alive = false;
       this.deaths += 1;

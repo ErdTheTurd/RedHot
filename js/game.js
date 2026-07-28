@@ -9,7 +9,7 @@ import { createMap, getSpawns } from './map.js';
 import { updateBot } from './bots.js';
 import { SFX } from './audio.js';
 import {
-  createProjectileMesh, createBombMesh, createTorpedoMesh,
+  createProjectileMesh, createBombMesh, createTorpedoMesh, createLandmineMesh,
   orientProjectile, spawnMuzzleFlash, spawnImpact,
   spawnExplosion, spawnSmokeCloud, spawnEmpBurst, updateVfxList,
 } from './vfx.js';
@@ -57,6 +57,8 @@ export class Game {
     this.camHeight = 8;
     this.camYaw = 0;
     this.camPitch = 0.45;
+    this.mines = [];
+    this._gearApplied = false;
   }
 
   applyMapTheme() {
@@ -141,6 +143,7 @@ export class Game {
     this.scene.add(this.player.mesh);
     this.units.push(this.player);
     this.placeDomainVehicle(this.player);
+    this.clearMines();
 
     if (this.mode.bots === 'full') {
       const raiderBots = team === TEAMS.RAIDERS ? 3 : 4;
@@ -194,6 +197,32 @@ export class Game {
 
     this.input.requestLock();
     this.beginRound();
+    // After first round reset so consumable bombs/mags aren't wiped by refill
+    this.applyPlayerGear();
+  }
+
+  /** Apply accessories + equipped warheads consumables to the player for this match. */
+  applyPlayerGear() {
+    if (!this.player || !this.inventory) return;
+    const acc = this.inventory.accessoryMods();
+    this.player.applyAccessories(acc);
+    this.player._refillOrdnance?.();
+    const { mods, used } = this.inventory.consumeMatchGear();
+    this.player.applyMatchConsumables(mods);
+    this._gearApplied = true;
+    if (used?.length) {
+      const names = used.map((id) => id.replace(/_/g, ' ')).join(', ');
+      this.ui.toast(`Warheads loaded: ${names}`, 2800);
+    } else if (Object.keys(this.inventory.data.accessories || {}).length) {
+      this.ui.toast('Accessories online', 1600);
+    }
+  }
+
+  clearMines() {
+    for (const m of this.mines || []) {
+      if (m.mesh) this.scene.remove(m.mesh);
+    }
+    this.mines = [];
   }
 
   beginRound() {
@@ -208,6 +237,7 @@ export class Game {
       this.timer = BUY_TIME;
     }
     this.clearBomb();
+    this.clearMines();
     this.projectiles = [];
     // Clear lingering VFX from previous round
     for (const fx of this.effects) {
@@ -230,6 +260,14 @@ export class Game {
     for (const u of this.units) {
       const spawn = u.team === TEAMS.RAIDERS ? spawnsR[ri++] : spawnsS[si++];
       u.resetForRound(spawn, true);
+      if (u.isPlayer && this.inventory) {
+        u.applyAccessories(this.inventory.accessoryMods());
+        // Keep leftover match landmines / ordnance extras across rounds within a match
+        if (u.matchMods) {
+          u.bombs = Math.max(u.bombs || 0, (u.vehicle.bombs || 0) + (u.accMods?.bombCap || 0));
+          u.torpedoes = Math.max(u.torpedoes || 0, (u.vehicle.torpedoes || 0) + (u.accMods?.torpedoCap || 0));
+        }
+      }
     }
 
     if (this.mode?.plant) {
@@ -243,12 +281,12 @@ export class Game {
 
     if (this.mode?.freeRoam) {
       this.ui.showBanner('VIGILANTE', `${this.mode.name} · free roam`);
-      this.ui.toast('Free roam — Esc extract · F gun · B bombs (air) or buy (ground) · T torpedoes');
+      this.ui.toast('Free roam — Esc extract · F gun · B bombs · T torpedoes · X landmine');
     } else if (this.mode?.buyPhase === false) {
       this.ui.showBanner(this.mode.name.toUpperCase(), 'Fight');
     } else {
       this.ui.showBanner(`ROUND ${this.roundNumber}`, this.mode?.name || 'Buy phase');
-      this.ui.toast('Press B to open arsenal');
+      this.ui.toast('Press B to open arsenal · X plant landmine');
     }
     if (!this.buyOpen && this.player.alive) {
       // auto hint only
@@ -632,7 +670,8 @@ export class Game {
     origin.x += Math.sin(unit.yaw) * (def.domain === 'air' ? 2.2 : 3.2);
     origin.z += Math.cos(unit.yaw) * (def.domain === 'air' ? 2.2 : 3.2);
 
-    const spread = def.spread + unit.recoil;
+    const spreadMul = unit.accMods?.spreadMult || 1;
+    const spread = (def.spread + unit.recoil) * spreadMul;
     const yaw = unit.yaw + (Math.random() - 0.5) * spread * 2;
     const pitch = (unit.isPlayer ? -unit.pitch : 0) + (Math.random() - 0.5) * spread;
     const dir = new THREE.Vector3(
@@ -649,14 +688,16 @@ export class Game {
     const muzzle = spawnMuzzleFlash(this.scene, origin, dir, heavy);
     this.effects.push({ isMuzzle: true, ...muzzle });
 
+    const dmgMul = 1 + (unit.matchMods?.damageBonus || 0);
+    const penBonus = unit.matchMods?.armorPenBonus || 0;
     this.projectiles.push({
       kind: 'gun',
       pos: origin,
       dir,
       speed: heavy ? 75 : 110,
       life: def.range / (heavy ? 75 : 110),
-      damage: def.damage,
-      pen: def.armorPen,
+      damage: def.damage * dmgMul,
+      pen: def.armorPen + penBonus,
       owner: unit,
       heavy,
       mesh,
@@ -695,7 +736,7 @@ export class Game {
       life: 6,
       damage: 95 + (unit.vehicle.bombs || 1) * 4,
       pen: 1,
-      radius: 9,
+      radius: 9 + (unit.matchMods?.bombRadius || 0),
       owner: unit,
       heavy: true,
       mesh,
@@ -732,7 +773,7 @@ export class Game {
       life: unit.vehicle.range / 42 + 0.5,
       damage: 80 + (unit.vehicle.torpedoes || 1) * 5,
       pen: 0.95,
-      radius: 4,
+      radius: 4 + (unit.matchMods?.torpedoRadius || 0),
       owner: unit,
       heavy: true,
       mesh,
@@ -747,17 +788,120 @@ export class Game {
     const def = unit.vehicle;
     const ammo = unit.ammo[def.id];
     if (!ammo || unit.reloadT > 0) return;
-    if (ammo.mag >= def.magSize || ammo.reserve <= 0) return;
-    unit.reloadT = def.reload;
+    const magSize = unit.magSizeFor?.(def.id) || def.magSize;
+    if (ammo.mag >= magSize || ammo.reserve <= 0) return;
+    unit.reloadT = def.reload * (unit.accMods?.reloadMult || 1);
   }
 
   finishReload(unit) {
     const def = unit.vehicle;
     const ammo = unit.ammo[def.id];
-    const need = def.magSize - ammo.mag;
+    const magSize = unit.magSizeFor?.(def.id) || def.magSize;
+    const need = magSize - ammo.mag;
     const take = Math.min(need, ammo.reserve);
     ammo.mag += take;
     ammo.reserve -= take;
+  }
+
+  tryPlantMine(unit) {
+    if (!unit?.alive) return;
+    if (this.phase !== PHASE.LIVE && this.phase !== PHASE.BOMB && !this.mode?.freeRoam) return;
+    if (unit.vehicle.domain === 'air') {
+      if (unit.isPlayer) this.ui.toast('Land to plant mines');
+      return;
+    }
+    if ((unit.landmines || 0) <= 0) {
+      if (unit.isPlayer) this.ui.toast('No landmines — equip a pack in Inventory');
+      return;
+    }
+    const pos = unit.mesh.position.clone();
+    // Don't stack mines on top of each other
+    for (const m of this.mines) {
+      if (m.pos.distanceTo(pos) < 2.2) {
+        if (unit.isPlayer) this.ui.toast('Too close to another mine');
+        return;
+      }
+    }
+    unit.landmines -= 1;
+    const mesh = createLandmineMesh();
+    const ground = this.map.groundHeight(pos.x, pos.z);
+    mesh.position.set(pos.x, ground + 0.06, pos.z);
+    // Own mines always visible to planter
+    mesh.visible = !!unit.isPlayer;
+    this.scene.add(mesh);
+    this.mines.push({
+      mesh,
+      pos: mesh.position.clone(),
+      owner: unit,
+      team: unit.team,
+      armed: true,
+    });
+    if (unit.isPlayer) {
+      SFX.plant();
+      this.ui.toast(`Mine planted · ${unit.landmines} left`, 1200);
+    }
+  }
+
+  updateMines(dt) {
+    if (!this.mines?.length) return;
+    const p = this.player;
+    const remain = [];
+    for (const mine of this.mines) {
+      // Visibility rules for the local player
+      if (p?.alive && mine.mesh) {
+        const own = mine.owner === p || mine.team === p.team;
+        const detector = !!p.mineDetector;
+        const dist = p.mesh.position.distanceTo(mine.pos);
+        const closeStill = dist < 3 && (p.stillT || 0) >= 5;
+        mine.mesh.visible = own || detector || closeStill;
+        if (mine.mesh.visible && mine.mesh.material) {
+          // pulse when newly spotted
+        }
+      }
+
+      let exploded = false;
+      for (const u of this.units) {
+        if (!u.alive || !mine.armed) continue;
+        if (u.team === mine.team) continue;
+        if (u.vehicle.domain === 'air') continue;
+        if (u.mesh.position.distanceTo(mine.pos) < 1.6) {
+          exploded = true;
+          this.detonateMine(mine, u);
+          break;
+        }
+      }
+      if (!exploded) remain.push(mine);
+    }
+    this.mines = remain;
+  }
+
+  detonateMine(mine, victim) {
+    mine.armed = false;
+    if (mine.mesh) this.scene.remove(mine.mesh);
+    const boomPos = mine.pos.clone().add(new THREE.Vector3(0, 0.8, 0));
+    this.spawnExplosion(boomPos);
+    SFX.kill();
+    for (const u of this.units) {
+      if (!u.alive) continue;
+      const dist = u.mesh.position.distanceTo(mine.pos);
+      if (dist > 7) continue;
+      const falloff = 1 - dist / 7;
+      const dmg = 70 * falloff;
+      const result = u.takeDamage(dmg, mine.owner, 0.85);
+      if (result.lastStand && u.isPlayer) this.ui.toast('Reactive shield saved you!', 1800);
+      if (result.killed) {
+        if (mine.owner) {
+          mine.owner.kills += 1;
+          this.frags[mine.owner.team] = (this.frags[mine.owner.team] || 0) + 1;
+          this.waveKills += mine.owner.isPlayer ? 1 : 0;
+          mine.owner.money = Math.min(MAX_MONEY, mine.owner.money + KILL_REWARD);
+        }
+        this.ui.killFeed(mine.owner || u, u, 'LANDMINE');
+        this.checkElimination();
+        this.checkModeObjectives();
+      }
+    }
+    if (this.player) this.ui.toast('Landmine detonated', 900);
   }
 
   updatePlayer(dt) {
@@ -775,7 +919,7 @@ export class Game {
     this.camPitch = 0.4 + p.pitch * 0.35;
     p.mesh.rotation.y = p.yaw;
 
-    const speed = p.vehicle.speed;
+    const speed = p.vehicle.speed * (p.accMods?.speedMult || 1);
     const forward = new THREE.Vector3(Math.sin(p.yaw), 0, Math.cos(p.yaw));
     // Right-handed strafe relative to facing (A = left, D = right on screen)
     const right = new THREE.Vector3(-Math.cos(p.yaw), 0, Math.sin(p.yaw));
@@ -793,14 +937,17 @@ export class Game {
       if (this.input.pressedAny('KeyD', 'ArrowRight')) move.sub(right);
     }
     if (move.lengthSq() > 0) {
+      p.stillT = 0;
       move.normalize().multiplyScalar(speed * dt);
       this.moveUnit(p, p.mesh.position.clone().add(move));
+    } else {
+      p.stillT = (p.stillT || 0) + dt;
     }
 
-    // Jump (Space) — costs 5 rounds
+    // Jump (Space) — costs ammo (Jump Boosters reduce cost)
     if (this.input.consumePress('Space')) {
       const res = p.tryJump();
-      if (res.ok) this.ui.toast('Jump −5 ammo');
+      if (res.ok) this.ui.toast(`Jump −${res.cost || 5} ammo`);
       else if (res.reason) this.ui.toast(res.reason, 900);
     }
     p.updateJump(dt);
@@ -808,12 +955,13 @@ export class Game {
 
     p.secondaryCooldown = Math.max(0, (p.secondaryCooldown || 0) - dt);
 
-    // F = guns · B = jet bombs (live) · T = ship torpedoes
+    // F = guns · B = jet bombs (live) · T = ship torpedoes · X = landmine
     if (this.input.pressed('KeyF')) this.tryFire(p);
     if (this.input.consumePress('KeyB') && this.phase !== PHASE.BUY && !this.buyOpen) {
       if (p.vehicle.domain === 'air') this.tryDropBomb(p);
     }
     if (this.input.consumePress('KeyT')) this.tryFireTorpedo(p);
+    if (this.input.consumePress('KeyX')) this.tryPlantMine(p);
     if (this.input.pressed('KeyR')) this.startReload(p);
 
     // plant / defuse
@@ -963,6 +1111,7 @@ export class Game {
               break;
             }
             const result = u.takeDamage(p.damage, p.owner, p.pen);
+            if (result.lastStand && u.isPlayer) this.ui.toast('Reactive shield saved you!', 1800);
             if (p.owner.isPlayer) SFX.hit();
             this.effects.push(spawnImpact(this.scene, p.pos.clone(), p.heavy));
             if (result.killed) {
@@ -1147,6 +1296,7 @@ export class Game {
     for (const u of this.units) {
       if (!u.isPlayer) updateBot(u, this, dt);
     }
+    this.updateMines(dt);
     this.updateProjectiles(dt);
     this.processRespawns();
     this.effects = updateVfxList(this.effects, dt, this.scene);

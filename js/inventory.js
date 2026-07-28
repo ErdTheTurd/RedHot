@@ -1,12 +1,13 @@
 /** Persistent inventory — fleet unlocks, shop skins, keys/cases, rewarded ads */
 
 import { VEHICLES, starterVehicleIds } from './config.js';
-import { CASES, KEYS, SKINS, rollVehicleFromCase, defaultSkinId } from './skins.js';
+import { CASES, KEYS, SKINS, rollVehicleFromCase, rollItemFromCase, defaultSkinId } from './skins.js';
+import { GEAR_ITEMS } from './gearItems.js';
 import { awardXp, levelFromXp } from './progression.js';
 import { normalizeAdsState, canWatchAd, showRewardedAd, adsRemaining, MAX_ADS_PER_DAY } from './ads.js';
 
-const STORAGE_KEY = 'vehicle_strike_inventory_v2';
-const LEGACY_KEY = 'vehicle_strike_inventory_v1';
+const STORAGE_KEY = 'vehicle_strike_inventory_v3';
+const LEGACY_KEYS = ['vehicle_strike_inventory_v2', 'vehicle_strike_inventory_v1'];
 
 function blankOwned() {
   const owned = {};
@@ -29,12 +30,15 @@ function blank() {
   }
   return {
     wallet: 3500,
-    cases: { ironfront_case: 1 },
-    keys: { ironfront_key: 1 },
+    cases: { ironfront_case: 1, warheads_case: 1, accessories_case: 1 },
+    keys: { ironfront_key: 1, warheads_key: 1, accessories_key: 1 },
     skins: {},
     equipped,
     ownedVehicles: blankOwned(),
     equippedFleet: blankEquippedFleet(),
+    items: {},
+    accessories: {},
+    loadoutConsumables: [],
     ads: { date: new Date().toISOString().slice(0, 10), count: 0 },
     stats: { matches: 0, wins: 0, opens: 0 },
     profile: {
@@ -72,6 +76,11 @@ function migrateLegacy(data) {
     equipped: { ...base.equipped, ...(data.equipped || {}) },
     ownedVehicles: owned,
     equippedFleet,
+    items: { ...(data.items || {}) },
+    accessories: { ...(data.accessories || {}) },
+    loadoutConsumables: Array.isArray(data.loadoutConsumables)
+      ? data.loadoutConsumables.filter((id) => GEAR_ITEMS[id]?.type === 'consumable').slice(0, 4)
+      : [],
     ads: normalizeAdsState(data.ads),
     stats,
     profile: awardXp({ ...profile, stats }, 0),
@@ -82,11 +91,13 @@ export function loadInventory() {
   try {
     let raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      const legacy = localStorage.getItem(LEGACY_KEY);
-      if (legacy) {
-        const migrated = migrateLegacy(JSON.parse(legacy));
-        saveInventory(migrated);
-        return migrated;
+      for (const key of LEGACY_KEYS) {
+        const legacy = localStorage.getItem(key);
+        if (legacy) {
+          const migrated = migrateLegacy(JSON.parse(legacy));
+          saveInventory(migrated);
+          return migrated;
+        }
       }
       return blank();
     }
@@ -236,6 +247,23 @@ export class InventoryService {
     if (this.caseCount(caseId) <= 0) return { ok: false, reason: 'No case owned' };
     if (this.keyCount(c.keyId) <= 0) return { ok: false, reason: 'Need a matching key' };
 
+    if (c.kind === 'item') {
+      const item = rollItemFromCase(caseId);
+      if (!item) return { ok: false, reason: 'Empty case pool' };
+      this.data.cases[caseId] -= 1;
+      this.data.keys[c.keyId] -= 1;
+      this.data.stats.opens += 1;
+      let duplicate = false;
+      if (item.type === 'accessory') {
+        duplicate = !!this.data.accessories[item.id];
+        this.data.accessories[item.id] = true;
+      } else {
+        this.data.items[item.id] = (this.data.items[item.id] || 0) + 1;
+      }
+      this.persist();
+      return { ok: true, item, duplicate, kind: 'item' };
+    }
+
     const vehicle = rollVehicleFromCase(caseId);
     if (!vehicle) return { ok: false, reason: 'Empty case pool' };
 
@@ -244,7 +272,124 @@ export class InventoryService {
     const isNew = this.unlockVehicle(vehicle.id);
     this.data.stats.opens += 1;
     this.persist();
-    return { ok: true, vehicle, duplicate: !isNew };
+    return { ok: true, vehicle, duplicate: !isNew, kind: 'vehicle' };
+  }
+
+  itemCount(id) {
+    return this.data.items[id] || 0;
+  }
+
+  ownsAccessory(id) {
+    return !!this.data.accessories[id];
+  }
+
+  ownedConsumables() {
+    return Object.entries(this.data.items || {})
+      .filter(([, n]) => n > 0)
+      .map(([id, count]) => ({ item: GEAR_ITEMS[id], count }))
+      .filter((x) => x.item?.type === 'consumable');
+  }
+
+  ownedAccessories() {
+    return Object.keys(this.data.accessories || {})
+      .map((id) => GEAR_ITEMS[id])
+      .filter(Boolean);
+  }
+
+  /** Equip up to 4 consumables to auto-apply at match start (consumes 1 each). */
+  setLoadoutConsumables(ids) {
+    const next = [];
+    for (const id of ids || []) {
+      if (!GEAR_ITEMS[id] || GEAR_ITEMS[id].type !== 'consumable') continue;
+      if ((this.data.items[id] || 0) <= 0) continue;
+      if (next.includes(id)) continue;
+      next.push(id);
+      if (next.length >= 4) break;
+    }
+    this.data.loadoutConsumables = next;
+    this.persist();
+    return { ok: true, loadout: next };
+  }
+
+  toggleLoadoutConsumable(id) {
+    const cur = [...(this.data.loadoutConsumables || [])];
+    const i = cur.indexOf(id);
+    if (i >= 0) cur.splice(i, 1);
+    else if (cur.length < 4 && (this.data.items[id] || 0) > 0) cur.push(id);
+    return this.setLoadoutConsumables(cur);
+  }
+
+  /**
+   * Consume equipped warheads and return a mods object for the match unit.
+   */
+  consumeMatchGear() {
+    const mods = {
+      reserve: 0,
+      mags: 0,
+      bombs: 0,
+      torpedoes: 0,
+      landmines: 0,
+      armorPenBonus: 0,
+      damageBonus: 0,
+      bombRadius: 0,
+      torpedoRadius: 0,
+      fullReload: false,
+      accessories: { ...this.data.accessories },
+    };
+    const used = [];
+    for (const id of this.data.loadoutConsumables || []) {
+      const item = GEAR_ITEMS[id];
+      if (!item || (this.data.items[id] || 0) <= 0) continue;
+      this.data.items[id] -= 1;
+      used.push(id);
+      const e = item.effect || {};
+      mods.reserve += e.reserve || 0;
+      mods.mags += e.mags || 0;
+      mods.bombs += e.bombs || 0;
+      mods.torpedoes += e.torpedoes || 0;
+      mods.landmines += e.landmines || 0;
+      mods.armorPenBonus += e.armorPenBonus || 0;
+      mods.damageBonus += e.damageBonus || 0;
+      mods.bombRadius += e.bombRadius || 0;
+      mods.torpedoRadius += e.torpedoRadius || 0;
+      if (e.fullReload) mods.fullReload = true;
+    }
+    // Keep loadout slots that still have stock
+    this.data.loadoutConsumables = (this.data.loadoutConsumables || [])
+      .filter((id) => (this.data.items[id] || 0) > 0);
+    this.persist();
+    return { mods, used };
+  }
+
+  accessoryMods() {
+    const mods = {
+      speedMult: 1,
+      startArmor: 0,
+      reloadMult: 1,
+      magBonus: 0,
+      bombCap: 0,
+      torpedoCap: 0,
+      spreadMult: 1,
+      jumpAmmoCost: 5,
+      mineDetector: false,
+      lastStand: false,
+    };
+    for (const id of Object.keys(this.data.accessories || {})) {
+      if (!this.data.accessories[id]) continue;
+      const e = GEAR_ITEMS[id]?.effect;
+      if (!e) continue;
+      if (e.speedMult) mods.speedMult *= e.speedMult;
+      if (e.startArmor) mods.startArmor += e.startArmor;
+      if (e.reloadMult) mods.reloadMult *= e.reloadMult;
+      if (e.magBonus) mods.magBonus += e.magBonus;
+      if (e.bombCap) mods.bombCap += e.bombCap;
+      if (e.torpedoCap) mods.torpedoCap += e.torpedoCap;
+      if (e.spreadMult) mods.spreadMult *= e.spreadMult;
+      if (e.jumpAmmoCost != null) mods.jumpAmmoCost = e.jumpAmmoCost;
+      if (e.mineDetector) mods.mineDetector = true;
+      if (e.lastStand) mods.lastStand = true;
+    }
+    return mods;
   }
 
   ownedSkins() {
