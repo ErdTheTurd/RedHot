@@ -777,19 +777,20 @@ export class Game {
 
     const speed = p.vehicle.speed;
     const forward = new THREE.Vector3(Math.sin(p.yaw), 0, Math.cos(p.yaw));
-    const right = new THREE.Vector3(Math.cos(p.yaw), 0, -Math.sin(p.yaw));
+    // Right-handed strafe relative to facing (A = left, D = right on screen)
+    const right = new THREE.Vector3(-Math.cos(p.yaw), 0, Math.sin(p.yaw));
     const move = new THREE.Vector3();
     const axis = this.input.moveAxis ? this.input.moveAxis() : null;
     if (axis) {
       if (axis.z > 0) move.add(forward);
       if (axis.z < 0) move.sub(forward);
-      if (axis.x < 0) move.sub(right);
-      if (axis.x > 0) move.add(right);
+      if (axis.x < 0) move.add(right); // A / Left
+      if (axis.x > 0) move.sub(right); // D / Right
     } else {
       if (this.input.pressedAny('KeyW', 'ArrowUp')) move.add(forward);
       if (this.input.pressedAny('KeyS', 'ArrowDown')) move.sub(forward);
-      if (this.input.pressedAny('KeyA', 'ArrowLeft')) move.sub(right);
-      if (this.input.pressedAny('KeyD', 'ArrowRight')) move.add(right);
+      if (this.input.pressedAny('KeyA', 'ArrowLeft')) move.add(right);
+      if (this.input.pressedAny('KeyD', 'ArrowRight')) move.sub(right);
     }
     if (move.lengthSq() > 0) {
       move.normalize().multiplyScalar(speed * dt);
