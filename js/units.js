@@ -56,6 +56,7 @@ export class Unit {
     this.deathT = 0;
     this.deathSpin = 0;
     this.deathFire = null;
+    this.sinkT = 0;
 
     const def = VEHICLES[this.loadout[0]];
     this.mesh = createVehicleMesh(
@@ -251,6 +252,7 @@ export class Unit {
     this.deathSpin = 0;
     this.clearDeathFire();
     this.flightAlt = 8;
+    this.sinkT = 0;
     for (const id of this.loadout) {
       if (!id) continue;
       const d = VEHICLES[id];

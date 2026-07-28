@@ -76,16 +76,25 @@ const THEMES = {
   },
 };
 
-/** East–west river through the mainland + north fork. Ships use this + ocean. */
+/** East–west river through the mainland + north fork. Same water body as the ocean. */
+export function riverCenterZ(x) {
+  return 4 + Math.sin(x * 0.08) * 1.4;
+}
+
+export function riverHalfWidth(x) {
+  let hw = 3.55;
+  // Flare into ocean at mouths so the channel reads continuous
+  if (x > 28) hw += Math.min(5, (x - 28) * 0.55);
+  if (x < -38) hw += Math.min(5, (-38 - x) * 0.55);
+  return hw;
+}
+
 export function inRiver(x, z) {
-  const centerZ = 4 + Math.sin(x * 0.08) * 1.4;
-  if (x > -42 && x < 34 && Math.abs(z - centerZ) < 3.5) return true;
+  const cz = riverCenterZ(x);
+  const hw = riverHalfWidth(x);
+  if (x > -48 && x < 42 && Math.abs(z - cz) < hw) return true;
   // North fork toward site-A waters
-  if (x > -34 && x < -24 && z > 4 && z < 19) return true;
-  // East mouth flare into ocean
-  if (x > 28 && x < 38 && z > 0 && z < 11) return true;
-  // West mouth flare
-  if (x > -46 && x < -38 && z > 0 && z < 10) return true;
+  if (x > -34 && x < -24 && z > cz && z < 20) return true;
   return false;
 }
 
@@ -118,7 +127,7 @@ function shadow(mesh) {
   return mesh;
 }
 
-export function createMap(scene, mapId = 'ironfront') {
+export function createMap(scene, mapId = 'ironfront', quality = null) {
   const themeKey = ({
     ironfront: 'harbor',
     dustfall: 'desert',
@@ -126,14 +135,17 @@ export function createMap(scene, mapId = 'ironfront') {
     blacksite: 'night',
   })[mapId] || 'harbor';
   const theme = THEMES[themeKey];
+  const q = quality || { low: false, waterSeg: 64, landStep: 2.5, propDensity: 1, flatLand: false, animateWater: true, detailMeshes: true };
 
   const group = new THREE.Group();
   scene.add(group);
 
-  const panelNrm = makePanelNormalMap(256);
-  const landTex = makeNoiseTexture(512, { base: theme.landBase, variance: theme.night ? 18 : 22 });
-  landTex.repeat.set(8, 6);
-  const sandTex = makeNoiseTexture(256, { base: theme.sandBase, variance: 22 });
+  const panelNrm = makePanelNormalMap(q.low ? 128 : 256);
+  const landTex = (q.low || theme.id !== 'harbor')
+    ? makeNoiseTexture(q.low ? 256 : 512, { base: theme.landBase, variance: theme.night ? 14 : 22 })
+    : makeTerrainTexture();
+  landTex.repeat.set(q.low ? 5 : 7, q.low ? 4 : 5);
+  const sandTex = makeNoiseTexture(q.low ? 128 : 256, { base: theme.sandBase, variance: 22 });
   sandTex.repeat.set(4, 4);
   const concreteTex = makeNoiseTexture(256, { base: [78, 84, 92], variance: 14, grid: true });
   concreteTex.repeat.set(2, 2);
@@ -141,18 +153,26 @@ export function createMap(scene, mapId = 'ironfront') {
   const asphaltTex = makeAsphaltTexture();
   const waterTex = makeWaterTexture();
 
-  const landMat = std({ map: landTex, roughness: 0.94, metalness: 0.04, envMapIntensity: 0.35 });
-  const sandMat = std({ map: sandTex, roughness: 0.9, metalness: 0.05, envMapIntensity: 0.3 });
+  const landMat = std({
+    map: landTex,
+    color: q.low ? 0xffffff : theme.id === 'harbor' ? 0xc8d4b8 : 0xffffff,
+    roughness: 0.94,
+    metalness: 0.04,
+    envMapIntensity: 0.35,
+    flat: q.flatLand,
+  });
+  const sandMat = std({ map: sandTex, roughness: 0.9, metalness: 0.05, envMapIntensity: 0.3, flat: q.flatLand });
   const concreteMat = std({
     map: concreteTex,
-    normalMap: panelNrm,
+    normalMap: q.low ? null : panelNrm,
     color: theme.concrete,
     metalness: 0.28,
     roughness: 0.58,
     envMapIntensity: 0.7,
+    flat: q.flatLand,
   });
   const rustMat = std({ map: rustTex, color: 0xffffff, metalness: 0.55, roughness: 0.5, envMapIntensity: 0.8 });
-  const metalMat = std({ color: theme.night ? 0x4a5564 : 0x6a7684, metalness: 0.88, roughness: 0.28, normalMap: panelNrm, envMapIntensity: 1.2 });
+  const metalMat = std({ color: theme.night ? 0x4a5564 : 0x6a7684, metalness: 0.88, roughness: 0.28, normalMap: q.low ? null : panelNrm, envMapIntensity: 1.2 });
   const darkMetal = std({ color: 0x2a323c, metalness: 0.75, roughness: 0.4, envMapIntensity: 1 });
   const windowMat = std({
     color: theme.night ? 0xffb070 : 0xa8e0ff,
@@ -166,44 +186,65 @@ export function createMap(scene, mapId = 'ironfront') {
   const foamMat = new THREE.MeshBasicMaterial({
     color: theme.id === 'arctic' ? 0xffffff : 0xd8eef8,
     transparent: true,
-    opacity: theme.night ? 0.2 : 0.35,
+    opacity: theme.night ? 0.22 : 0.4,
     depthWrite: false,
   });
 
-  // —— Ocean ——
+  // —— Unified ocean (river is the same water body showing through the land cut) ——
   const waterMat = std({
     map: waterTex,
     color: theme.waterColor,
-    metalness: 0.92,
-    roughness: theme.night ? 0.22 : 0.12,
+    metalness: 0.95,
+    roughness: theme.night ? 0.2 : 0.08,
     transparent: true,
-    opacity: 0.94,
-    envMapIntensity: 1.6,
+    opacity: 0.92,
+    envMapIntensity: 1.85,
   });
+  const waterSeg = q.waterSeg || 64;
   const water = shadow(new THREE.Mesh(
-    new THREE.PlaneGeometry(MAP_SIZE * 3.0, MAP_SIZE * 3.0, 64, 64),
+    new THREE.PlaneGeometry(MAP_SIZE * 3.2, MAP_SIZE * 3.2, waterSeg, waterSeg),
     waterMat
   ));
   water.rotation.x = -Math.PI / 2;
-  water.position.y = -0.12;
+  water.position.y = -0.14;
   water.name = 'water';
   group.add(water);
 
-  // Shore foam rings
-  for (const [cx, cz, r] of [[-5, -8, 42], [-28, 22, 13], [30, 18, 12]]) {
-    const foam = new THREE.Mesh(new THREE.RingGeometry(r * 0.92, r * 1.05, 48), foamMat);
+  // Deep under-tint so trenches read as depth
+  const deep = new THREE.Mesh(
+    new THREE.PlaneGeometry(MAP_SIZE * 3.2, MAP_SIZE * 3.2),
+    new THREE.MeshBasicMaterial({
+      color: theme.night ? 0x020810 : 0x041820,
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false,
+    })
+  );
+  deep.rotation.x = -Math.PI / 2;
+  deep.position.y = -1.8;
+  group.add(deep);
+
+  // Shore foam rings (ocean)
+  for (const [cx, cz, r] of [[-5, -8, 42], [-28, 22, 13], [30, 18, 12], [-42, 4, 9], [38, 4, 10]]) {
+    const foam = new THREE.Mesh(
+      new THREE.RingGeometry(r * 0.9, r * 1.06, q.low ? 24 : 64),
+      foamMat
+    );
     foam.rotation.x = -Math.PI / 2;
-    foam.position.set(cx, 0.02, cz);
+    foam.position.set(cx, 0.01, cz);
     group.add(foam);
   }
 
-  // —— Mainland ——
-  const land = shadow(new THREE.Mesh(new THREE.BoxGeometry(70, 1.2, 55), landMat));
-  land.position.set(-5, 0.4, -8);
-  group.add(land);
-
-  // Navigable river cutting the island (ships: ocean + river only)
-  buildRiver(group, { waterMat, sandMat, concreteMat, metalMat });
+  // —— Mainland carved so the river connects continuously into the ocean ——
+  buildMainlandChannel(group, {
+    landMat,
+    sandMat,
+    concreteMat,
+    metalMat,
+    foamMat,
+    theme,
+    quality: q,
+  });
 
   // Beveled cliff faces
   const cliffMat = std({ color: theme.cliff, roughness: 0.9, metalness: 0.08, flat: true, envMapIntensity: 0.25 });
@@ -218,9 +259,35 @@ export function createMap(scene, mapId = 'ironfront') {
     group.add(cliff);
   }
 
+  // Distant ridgelines for battlefield scale
+  if (!q.low) {
+    const ridgeMat = std({
+      color: theme.cliff,
+      roughness: 0.95,
+      metalness: 0.05,
+      flat: true,
+      envMapIntensity: 0.2,
+    });
+    for (const [x, z, w, h, d] of [
+      [-70, -10, 28, 10, 40],
+      [70, 5, 26, 9, 36],
+      [10, -70, 55, 7, 18],
+      [-20, 65, 50, 6, 16],
+    ]) {
+      const ridge = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), ridgeMat);
+      ridge.position.set(x, h * 0.35 - 1, z);
+      ridge.castShadow = false;
+      ridge.receiveShadow = true;
+      group.add(ridge);
+    }
+  }
+
   // Rock outcrops
-  for (const [x, z, s] of [[-36, 8, 1.4], [26, 4, 1.1], [-22, -28, 0.9], [12, 16, 1.2]]) {
-    const rock = shadow(new THREE.Mesh(new THREE.DodecahedronGeometry(s, 0), cliffMat));
+  const rockCount = q.low ? 2 : 4;
+  const rockSpots = [[-36, 8, 1.4], [26, 4, 1.1], [-22, -28, 0.9], [12, 16, 1.2]];
+  for (let i = 0; i < rockCount; i++) {
+    const [x, z, s] = rockSpots[i];
+    const rock = shadow(new THREE.Mesh(new THREE.DodecahedronGeometry(s, q.low ? 0 : 1), cliffMat));
     rock.position.set(x, s * 0.55, z);
     rock.rotation.set(Math.random(), Math.random(), Math.random());
     group.add(rock);
@@ -322,7 +389,7 @@ export function createMap(scene, mapId = 'ironfront') {
   });
 
   // Barrels, sandbags, jersey barriers, floodlights
-  scatterProps(group, { rustMat, concreteMat, metalMat, darkMetal, sandMat });
+  scatterProps(group, { rustMat, concreteMat, metalMat, darkMetal, sandMat, density: q.propDensity ?? 1 });
 
   // Antenna / radar towers
   for (const [x, z] of [[-32, -20], [24, -22], [-34, 12]]) {
@@ -403,17 +470,22 @@ export function createMap(scene, mapId = 'ironfront') {
 
   // Scrub / bush clusters
   const bushMat = std({
-    color: theme.id === 'desert' ? 0x6a5a32 : theme.id === 'arctic' ? 0xc8d8e0 : theme.night ? 0x1a2a18 : 0x3a5a32,
-    roughness: 0.9,
+    color: theme.id === 'desert' ? 0x8a7040 : theme.id === 'arctic' ? 0xa8c0a0 : theme.night ? 0x1a2a18 : 0x3a5a28,
+    roughness: 0.95,
     metalness: 0.05,
     flat: true,
     envMapIntensity: 0.2,
   });
-  for (let i = 0; i < 28; i++) {
+  const bushN = Math.floor(28 * (q.propDensity ?? 1));
+  for (let i = 0; i < bushN; i++) {
     const bx = -35 + Math.random() * 65;
     const bz = -30 + Math.random() * 50;
     if (Math.abs(bx) < 8 && bz < -10) continue;
-    const bush = shadow(new THREE.Mesh(new THREE.SphereGeometry(0.5 + Math.random() * 0.6, 7, 6), bushMat));
+    if (inRiver(bx, bz) || onRiverBridge(bx, bz)) continue;
+    const bush = shadow(new THREE.Mesh(
+      new THREE.SphereGeometry(0.5 + Math.random() * 0.6, q.low ? 5 : 7, q.low ? 4 : 6),
+      bushMat
+    ));
     bush.position.set(bx, 1.15 + Math.random() * 0.3, bz);
     bush.scale.set(1, 0.65 + Math.random() * 0.3, 1);
     group.add(bush);
@@ -484,6 +556,7 @@ export function createMap(scene, mapId = 'ironfront') {
     water,
     mapId,
     theme,
+    quality: q,
     colliders: covers.map(([x, y, z, w, h, d]) => ({
       min: new THREE.Vector3(x - w / 2, 0, z - d / 2),
       max: new THREE.Vector3(x + w / 2, h * 2, z + d / 2),
@@ -495,7 +568,7 @@ export function createMap(scene, mapId = 'ironfront') {
       if (domain === 'land' && onRiverBridge(x, z)) return false;
       if (inRiver(x, z)) return true;
       const onLand =
-        (x > -40 && x < 30 && z > -35.5 && z < 19.5) ||
+        (x > -40 && x < 30 && z > -35.5 && z < 19.5 && !inRiver(x, z)) ||
         (Math.hypot(x + 28, z - 22) < 11) ||
         (Math.hypot(x - 30, z - 18) < 10) ||
         (x > -22 && x < -14 && z > -1 && z < 17) ||
@@ -504,7 +577,7 @@ export function createMap(scene, mapId = 'ironfront') {
     },
     groundHeight(x, z) {
       if (onRiverBridge(x, z)) return 1.35;
-      if (inRiver(x, z)) return 0.2;
+      if (inRiver(x, z)) return 0.08;
       if (Math.hypot(x + 28, z - 22) < 11) return 0.85;
       if (Math.hypot(x - 30, z - 18) < 10) return 0.85;
       if (x > -22 && x < -14 && z > -1 && z < 17) return 0.4;
@@ -516,13 +589,11 @@ export function createMap(scene, mapId = 'ironfront') {
     nearestWater(x, z) {
       if (this.isWater(x, z)) return { x, z };
       const candidates = [
-        // River midpoints (prefer inland water for land spawns)
         { x: -30, z: 4 },
         { x: -10, z: 4.5 },
         { x: 5, z: 3.5 },
         { x: 20, z: 4 },
         { x: -28, z: 12 },
-        // Ocean
         { x: -42, z: 0 },
         { x: 36, z: -8 },
         { x: -28, z: 34 },
@@ -557,6 +628,7 @@ export function createMap(scene, mapId = 'ironfront') {
         this.water.material.map.offset.x = t * 0.018;
         this.water.material.map.offset.y = t * 0.012;
       }
+      if (!this.quality?.animateWater) return;
       const pos = this.water?.geometry?.attributes?.position;
       if (pos) {
         for (let i = 0; i < pos.count; i++) {
@@ -564,56 +636,116 @@ export function createMap(scene, mapId = 'ironfront') {
           const y = pos.getY(i);
           pos.setZ(
             i,
-            Math.sin(x * 0.07 + t * 1.4) * 0.28
-              + Math.cos(y * 0.06 + t * 1.1) * 0.22
-              + Math.sin((x + y) * 0.03 + t * 0.7) * 0.12
+            Math.sin(x * 0.07 + t * 1.4) * 0.32
+              + Math.cos(y * 0.06 + t * 1.1) * 0.26
+              + Math.sin((x + y) * 0.03 + t * 0.7) * 0.14
           );
         }
         pos.needsUpdate = true;
+        this.water.geometry.computeVertexNormals?.();
       }
     },
   };
 }
 
-function buildRiver(group, mats) {
-  const { waterMat, sandMat, concreteMat, metalMat } = mats;
-  const riverMat = waterMat.clone();
-  riverMat.opacity = 0.97;
-  riverMat.transparent = true;
+/**
+ * Carve a river trench through the mainland so the shared ocean plane shows through —
+ * same material, same waves, continuous into open water at both mouths.
+ */
+function buildMainlandChannel(group, opts) {
+  const { landMat, sandMat, concreteMat, metalMat, foamMat, quality: q } = opts;
+  const step = q.landStep || 2.5;
+  const landH = 1.28;
+  const landY = 0.42;
 
-  // Main channel segments (follow the sin centerline)
-  for (let x = -42; x < 34; x += 4) {
-    const cz = 4 + Math.sin(x * 0.08) * 1.4;
-    const seg = shadow(new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.55, 7.2), riverMat));
-    seg.position.set(x + 2, 0.55, cz);
-    group.add(seg);
-    // Sandy banks
+  for (let x = -40; x < 30; x += step) {
+    const x1 = Math.min(30, x + step);
+    const mid = (x + x1) * 0.5;
+    const w = x1 - x + 0.08;
+    const cz = riverCenterZ(mid);
+    const hw = riverHalfWidth(mid);
+
+    // South bank plate
+    const southTop = cz - hw;
+    const southH = southTop - (-35.5);
+    if (southH > 0.8) {
+      const south = shadow(new THREE.Mesh(new THREE.BoxGeometry(w, landH, southH), landMat));
+      south.position.set(mid, landY, -35.5 + southH * 0.5);
+      group.add(south);
+    }
+
+    // North bank plate (skip / shorten for north fork so ocean continues inland)
+    let northBot = cz + hw;
+    const inFork = mid > -34 && mid < -24;
+    if (inFork) {
+      // Fork: leave open water up to site waters; no north fill in channel
+      northBot = 19.5;
+    }
+    const northH = 19.5 - northBot;
+    if (!inFork && northH > 0.8) {
+      const north = shadow(new THREE.Mesh(new THREE.BoxGeometry(w, landH, northH), landMat));
+      north.position.set(mid, landY, northBot + northH * 0.5);
+      group.add(north);
+    }
+
+    // Sloped sandy banks — same shoreline language as the ocean
     for (const side of [-1, 1]) {
-      const bank = shadow(new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.35, 1.1), sandMat));
-      bank.position.set(x + 2, 0.95, cz + side * 4.0);
+      if (inFork && side > 0) continue;
+      const bank = shadow(new THREE.Mesh(new THREE.BoxGeometry(w, 0.7, 1.65), sandMat));
+      bank.position.set(mid, 0.38, cz + side * (hw + 0.15));
+      bank.rotation.x = side * 0.42;
       group.add(bank);
+      // Cliff face into the channel for depth
+      if (!q.low) {
+        const wall = shadow(new THREE.Mesh(
+          new THREE.BoxGeometry(w, 1.1, 0.22),
+          sandMat
+        ));
+        wall.position.set(mid, -0.15, cz + side * (hw - 0.15));
+        group.add(wall);
+      }
+    }
+
+    // Soft foam along the channel (reads as continuous with ocean foam)
+    if (!q.low && Math.abs(mid % (step * 3)) < step) {
+      const foam = new THREE.Mesh(
+        new THREE.PlaneGeometry(w * 0.95, hw * 1.85),
+        foamMat
+      );
+      foam.rotation.x = -Math.PI / 2;
+      foam.position.set(mid, 0.02, cz);
+      group.add(foam);
     }
   }
 
-  // North fork
-  const fork = shadow(new THREE.Mesh(new THREE.BoxGeometry(8, 0.55, 14), riverMat));
-  fork.position.set(-29, 0.55, 11);
-  group.add(fork);
-  for (const [bx, bz] of [[-33.5, 11], [-24.5, 11], [-29, 17.5]]) {
-    const bank = shadow(new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.35, 4), sandMat));
-    bank.position.set(bx, 0.95, bz);
+  // North-fork sandy banks
+  for (const [bx, bz, bw, bd] of [
+    [-34.2, 11, 1.3, 12],
+    [-23.8, 11, 1.3, 12],
+    [-29, 18.2, 9, 1.3],
+  ]) {
+    const bank = shadow(new THREE.Mesh(new THREE.BoxGeometry(bw, 0.55, bd), sandMat));
+    bank.position.set(bx, 0.5, bz);
     group.add(bank);
   }
 
   // Land bridges so tanks can still cross
-  for (const [x, z] of [[-6, 4], [12, 3.5]]) {
-    const bridge = shadow(new THREE.Mesh(new THREE.BoxGeometry(5.5, 0.35, 10), concreteMat));
-    bridge.position.set(x, 1.15, z);
+  for (const [bx, bz] of [[-6, 4], [12, 3.5]]) {
+    const bridge = shadow(new THREE.Mesh(new THREE.BoxGeometry(5.5, 0.38, 10), concreteMat));
+    bridge.position.set(bx, 1.15, bz);
     group.add(bridge);
     for (const sx of [-2.5, 2.5]) {
-      const rail = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.45, 9.5), metalMat));
-      rail.position.set(x + sx, 1.45, z);
+      const rail = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.5, 9.5), metalMat));
+      rail.position.set(bx + sx, 1.48, bz);
       group.add(rail);
+    }
+    // Pillars into the water
+    for (const pz of [-3.5, 3.5]) {
+      for (const px of [-1.8, 1.8]) {
+        const pillar = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, 2.4, 8), concreteMat));
+        pillar.position.set(bx + px, 0.05, bz + pz);
+        group.add(pillar);
+      }
     }
   }
 }
@@ -799,10 +931,12 @@ function buildWatchtower(group, x, z, concreteMat, metalMat, windowMat) {
 }
 
 function scatterProps(group, mats) {
-  const { rustMat, concreteMat, metalMat, darkMetal, sandMat } = mats;
+  const { rustMat, concreteMat, metalMat, darkMetal, sandMat, density = 1 } = mats;
+  const keep = (i = 0) => density >= 0.99 || Math.random() < density + i * 0.05;
 
   // Oil barrels
   for (const [x, z] of [[-14, -6], [6, -4], [-2, 6], [18, 4], [-22, 12], [12, -16], [-28, -8]]) {
+    if (!keep()) continue;
     for (let i = 0; i < 2 + (Math.random() > 0.5 ? 1 : 0); i++) {
       const barrel = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.38, 1.0, 12), rustMat));
       barrel.position.set(x + i * 0.75, 1.55, z + (i % 2) * 0.2);
@@ -840,6 +974,7 @@ function scatterProps(group, mats) {
 
   // Floodlights
   for (const [x, z] of [[-20, -28], [20, -28], [-30, 18], [32, 14]]) {
+    if (!keep(0.1)) continue;
     const pole = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 6, 8), metalMat));
     pole.position.set(x, 4, z);
     group.add(pole);
@@ -857,12 +992,14 @@ function scatterProps(group, mats) {
     );
     bulb.position.set(x, 6.95, z + 0.15);
     group.add(bulb);
-    const light = new THREE.SpotLight(0xffe8c0, 8, 36, 0.5, 0.5, 1.5);
-    light.position.set(x, 7, z);
-    light.target.position.set(x * 0.3, 1, z * 0.3);
-    light.castShadow = false;
-    group.add(light);
-    group.add(light.target);
+    if (density > 0.55) {
+      const light = new THREE.SpotLight(0xffe8c0, 8, 36, 0.5, 0.5, 1.5);
+      light.position.set(x, 7, z);
+      light.target.position.set(x * 0.3, 1, z * 0.3);
+      light.castShadow = false;
+      group.add(light);
+      group.add(light.target);
+    }
   }
 
   // Ammo crates

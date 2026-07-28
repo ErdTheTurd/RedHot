@@ -9,6 +9,7 @@ import { Game } from './game.js';
 import { InventoryService } from './inventory.js';
 import { SFX } from './audio.js';
 import { makeSkyDome, makeEnvMapTexture } from './textures.js';
+import { getGraphicsPreset, resolveQuality } from './graphics.js';
 
 const bootError = document.getElementById('boot-error');
 const bootErrorMsg = document.getElementById('boot-error-msg');
@@ -21,25 +22,6 @@ function showBootError(err) {
       bootErrorMsg.textContent = (err && (err.message || String(err))) || 'Unknown startup error';
     }
   }
-}
-
-function detectQuality() {
-  const canvas = document.createElement('canvas');
-  const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
-  const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
-    || (navigator.maxTouchPoints > 1 && window.innerWidth < 1100);
-  const mem = navigator.deviceMemory || 8;
-  const cores = navigator.hardwareConcurrency || 4;
-  const low = isMobile || mem <= 4 || cores <= 2 || !gl;
-  return {
-    isMobile,
-    low,
-    pixelRatioCap: low ? 1.25 : 2,
-    shadows: !low,
-    shadowSize: low ? 1024 : 2048,
-    bloom: !low,
-    antialias: !low,
-  };
 }
 
 async function boot() {
@@ -55,7 +37,7 @@ async function boot() {
     throw new Error('WebGL is disabled or unavailable in this browser. Enable hardware acceleration and reload.');
   }
 
-  const quality = detectQuality();
+  let quality = resolveQuality(getGraphicsPreset());
 
   let renderer;
   try {
@@ -70,12 +52,24 @@ async function boot() {
     throw new Error('Could not create WebGL renderer. Try another browser or update your GPU drivers.');
   }
 
+  function applyRendererQuality(q) {
+    quality = q;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.pixelRatioCap));
+    renderer.shadowMap.enabled = q.shadows;
+    if (sun) {
+      sun.castShadow = q.shadows;
+      if (q.shadows) sun.shadow.mapSize.set(q.shadowSize, q.shadowSize);
+    }
+    if (amb) amb.intensity = q.low ? 0.35 : 0.18;
+    renderer.toneMappingExposure = q.low ? 1.0 : 1.12;
+  }
+
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, quality.pixelRatioCap));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
   renderer.shadowMap.enabled = quality.shadows;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  renderer.toneMappingExposure = quality.low ? 1.0 : 1.12;
   if ('outputColorSpace' in renderer) renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const scene = new THREE.Scene();
@@ -174,6 +168,12 @@ async function boot() {
     closeBuyMenu() { gameRef.game.closeBuyMenu(); },
     buyVehicle(id) { gameRef.game.buyVehicle(id); },
     buyGear(id) { gameRef.game.buyGear(id); },
+    setGraphicsQuality(preset) {
+      const q = resolveQuality(preset);
+      gameRef.game.setGraphicsQuality(q);
+      return q;
+    },
+    get quality() { return gameRef.game?.quality; },
   }, inventory);
 
   const game = new Game({
@@ -183,6 +183,8 @@ async function boot() {
     ui,
     inventory,
     lighting: { sun, hemi },
+    quality,
+    onQualityChange: (q) => applyRendererQuality(q),
   });
   gameRef.game = game;
 
