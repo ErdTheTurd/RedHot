@@ -1,31 +1,23 @@
-# Deploy Vehicle Strike to GitHub Pages from the repo root on every push to main.
-name: Deploy GitHub Pages
+# GitHub Pages for this repo is configured as "Deploy from a branch".
+# The previous Actions-based deploy failed on main because the
+# github-pages environment only allowed an old feature branch.
+#
+# Keep Pages source as: Settings → Pages → Deploy from a branch → main / (root)
+# GitHub's built-in pages-build-deployment will publish automatically.
+#
+# This workflow is a no-op health check so pushes to main don't go red.
+name: Pages config check
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: true
-
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  note:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: .
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Pages deploy mode
+        run: |
+          echo "Use Settings → Pages → Deploy from a branch → main / (root)."
+          echo "Do not use Actions deploy unless the github-pages environment allows main."
