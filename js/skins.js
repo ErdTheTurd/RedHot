@@ -15,7 +15,8 @@ export const RARITY = {
 
 /**
  * Finishes are shop cosmetics — NOT crate drops.
- * pattern: solid | camo | digital | hex | carbon | tiger | rust | circuit | pearl | scale | stripes | mesh | splatter
+ * pattern: solid | camo | digital | hex | carbon | tiger | rust | circuit | pearl | scale |
+ *          stripes | mesh | splatter | magma | aurora | holo | plasma | prism | nova | obsidian | fractal
  */
 const FINISHES = [
   { suffix: 'Desert Storm', color: 0xc2a46b, secondary: 0x8a7048, tertiary: 0xe8d5a8, pattern: 'camo', metalness: 0.25, roughness: 0.72, rarity: 'consumer', price: 120 },
@@ -33,11 +34,21 @@ const FINISHES = [
   { suffix: 'Void Carbon', color: 0x12161c, secondary: 0x2a3038, tertiary: 0x0a0c10, pattern: 'carbon', metalness: 0.85, roughness: 0.18, emissive: 0x102030, rarity: 'classified', price: 3200 },
   { suffix: 'Rose Titanium', color: 0xc45c7a, secondary: 0x6a2840, tertiary: 0xf0a0b8, pattern: 'pearl', metalness: 0.8, roughness: 0.22, emissive: 0x401020, rarity: 'classified', price: 3200 },
   { suffix: 'Ion Storm', color: 0x3d7cff, secondary: 0x102040, tertiary: 0xa0c8ff, pattern: 'circuit', metalness: 0.75, roughness: 0.2, emissive: 0x102040, rarity: 'classified', price: 3200 },
+  { suffix: 'Obsidian Edge', color: 0x0c0e12, secondary: 0x2a3340, tertiary: 0x6a8098, pattern: 'obsidian', metalness: 0.92, roughness: 0.12, emissive: 0x101820, rarity: 'classified', price: 3600 },
+  { suffix: 'Plasma Vein', color: 0x1a0a28, secondary: 0xc44cff, tertiary: 0xff90ff, pattern: 'plasma', metalness: 0.7, roughness: 0.18, emissive: 0x4a1060, rarity: 'classified', price: 3600 },
+  { suffix: 'Magma Core', color: 0x1a0800, secondary: 0xff4a00, tertiary: 0xffcc44, pattern: 'magma', metalness: 0.65, roughness: 0.22, emissive: 0x602000, rarity: 'classified', price: 3600 },
   { suffix: 'Blood Orbit', color: 0x8b0000, secondary: 0x2a0000, tertiary: 0xff4040, pattern: 'hex', metalness: 0.7, roughness: 0.18, emissive: 0x400000, rarity: 'covert', price: 7500 },
   { suffix: 'Ghost Pearl', color: 0xe8f0ff, secondary: 0xa0b8d0, tertiary: 0xffffff, pattern: 'pearl', metalness: 0.9, roughness: 0.12, emissive: 0x304050, rarity: 'covert', price: 7500 },
   { suffix: 'Dragon Scale', color: 0x1a8f3c, secondary: 0x0a3018, tertiary: 0x50d880, pattern: 'scale', metalness: 0.75, roughness: 0.2, emissive: 0x0a3018, rarity: 'covert', price: 7500 },
+  { suffix: 'Aurora Drift', color: 0x0a2038, secondary: 0x2ee6a8, tertiary: 0x88a0ff, pattern: 'aurora', metalness: 0.8, roughness: 0.14, emissive: 0x104060, rarity: 'covert', price: 8200 },
+  { suffix: 'Holo Mirage', color: 0x201030, secondary: 0xff60c8, tertiary: 0x60ffe8, pattern: 'holo', metalness: 0.88, roughness: 0.1, emissive: 0x301848, rarity: 'covert', price: 8200 },
+  { suffix: 'Fractal Night', color: 0x0a1018, secondary: 0x40c8ff, tertiary: 0xe8f8ff, pattern: 'fractal', metalness: 0.78, roughness: 0.16, emissive: 0x082030, rarity: 'covert', price: 8200 },
   { suffix: 'Apex Legend', color: 0xffd700, secondary: 0x8a6000, tertiary: 0xfff0a0, pattern: 'hex', metalness: 0.95, roughness: 0.1, emissive: 0x5a4000, rarity: 'extraordinary', price: 16000 },
   { suffix: 'Black Market', color: 0x1a0a10, secondary: 0xff3b5c, tertiary: 0xff8098, pattern: 'tiger', metalness: 0.9, roughness: 0.12, emissive: 0x400010, rarity: 'extraordinary', price: 16000 },
+  { suffix: 'Prism Sovereign', color: 0x1a1028, secondary: 0xffd060, tertiary: 0x80e0ff, pattern: 'prism', metalness: 0.96, roughness: 0.08, emissive: 0x302010, rarity: 'extraordinary', price: 18500 },
+  { suffix: 'Nova Crown', color: 0x080610, secondary: 0xffc020, tertiary: 0xffffff, pattern: 'nova', metalness: 0.98, roughness: 0.06, emissive: 0x503000, rarity: 'extraordinary', price: 18500 },
+  { suffix: 'Eclipse Royalty', color: 0x050508, secondary: 0x7a5cff, tertiary: 0xffd0ff, pattern: 'obsidian', metalness: 0.97, roughness: 0.07, emissive: 0x201040, rarity: 'extraordinary', price: 20000 },
+  { suffix: 'Solar Monarch', color: 0x2a1000, secondary: 0xff6a00, tertiary: 0xffe080, pattern: 'magma', metalness: 0.94, roughness: 0.09, emissive: 0x803000, rarity: 'extraordinary', price: 20000 },
 ];
 
 const SELL = {
