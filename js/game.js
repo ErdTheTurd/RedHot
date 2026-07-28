@@ -914,6 +914,15 @@ export class Game {
     const sens = 0.0024;
     p.yaw -= dx * sens;
     p.pitch -= dy * sens;
+
+    // Hold Shift + W/S or ↑/↓ to aim the gun vertically (does not move)
+    const shiftAim = this.input.pressedAny('ShiftLeft', 'ShiftRight');
+    if (shiftAim) {
+      const aimSpeed = 1.55;
+      if (this.input.pressedAny('KeyW', 'ArrowUp')) p.pitch += aimSpeed * dt;
+      if (this.input.pressedAny('KeyS', 'ArrowDown')) p.pitch -= aimSpeed * dt;
+    }
+
     p.pitch = Math.max(-0.5, Math.min(0.85, p.pitch));
     this.camYaw = p.yaw;
     this.camPitch = 0.4 + p.pitch * 0.35;
@@ -926,13 +935,18 @@ export class Game {
     const move = new THREE.Vector3();
     const axis = this.input.moveAxis ? this.input.moveAxis() : null;
     if (axis) {
-      if (axis.z > 0) move.add(forward);
-      if (axis.z < 0) move.sub(forward);
+      // While shift-aiming, W/S / ↑↓ adjust pitch only — still allow A/D strafe
+      if (!shiftAim) {
+        if (axis.z > 0) move.add(forward);
+        if (axis.z < 0) move.sub(forward);
+      }
       if (axis.x < 0) move.add(right); // A / Left
       if (axis.x > 0) move.sub(right); // D / Right
     } else {
-      if (this.input.pressedAny('KeyW', 'ArrowUp')) move.add(forward);
-      if (this.input.pressedAny('KeyS', 'ArrowDown')) move.sub(forward);
+      if (!shiftAim) {
+        if (this.input.pressedAny('KeyW', 'ArrowUp')) move.add(forward);
+        if (this.input.pressedAny('KeyS', 'ArrowDown')) move.sub(forward);
+      }
       if (this.input.pressedAny('KeyA', 'ArrowLeft')) move.add(right);
       if (this.input.pressedAny('KeyD', 'ArrowRight')) move.sub(right);
     }
