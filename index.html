@@ -78,6 +78,7 @@
       <div class="panel-card wide">
         <h2>OPERATIONS BRIEFING</h2>
         <ul class="brief-list">
+          <li><strong>Catholic Trivia</strong> — Before DEPLOY, answer 5 questions (need 4 correct). Reloading and buying also ask a quick faith check; a correct answer when short on credits can grant alms.</li>
           <li><strong>Matchmaking</strong> — Team modes search for players for 60 seconds, then fill empty seats with AI.</li>
           <li><strong>Fleet crates</strong> — Tank, Ship, and Jet cases only drop that domain (plus Scout, Skiff, Wasp starters). Equip them in Inventory → Fleet. Arsenal only shows what you own.</li>
           <li><strong>Warheads case</strong> — Bullets, magazines, bombs (jets), torpedoes (ships), landmines, and more. Equip up to 4 in Inventory → Warheads; they load when a match starts.</li>
@@ -366,6 +367,26 @@
 
     <div id="damage-fx" class="damage-fx"></div>
     <div id="nice-try" class="nice-try hidden" aria-live="assertive">NICE TRY</div>
+
+    <!-- CATHOLIC TRIVIA -->
+    <div id="trivia-modal" class="trivia-modal hidden" role="dialog" aria-modal="true" aria-labelledby="trivia-title">
+      <div class="trivia-card">
+        <p class="trivia-kicker" id="trivia-kicker">CATHOLIC TRIVIA</p>
+        <h3 id="trivia-title">Knowledge check</h3>
+        <p class="trivia-reason" id="trivia-reason"></p>
+        <div class="trivia-progress">
+          <span id="trivia-progress-label">1 / 5</span>
+          <div class="trivia-progress-bar"><i id="trivia-progress-fill"></i></div>
+          <span id="trivia-score-label">0 correct</span>
+        </div>
+        <p class="trivia-question" id="trivia-question"></p>
+        <div class="trivia-choices" id="trivia-choices"></div>
+        <p class="trivia-feedback hidden" id="trivia-feedback"></p>
+        <div class="trivia-actions">
+          <button class="btn btn-ghost" type="button" id="btn-trivia-cancel">CANCEL</button>
+        </div>
+      </div>
+    </div>
 
     <!-- REWARDED AD / INSUFFICIENT FUNDS -->
     <div id="ad-modal" class="ad-modal hidden" role="dialog" aria-modal="true">
