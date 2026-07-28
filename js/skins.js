@@ -113,29 +113,29 @@ function buildSkins() {
 export const SKINS = buildSkins();
 
 export const KEYS = {
-  ironfront_key: {
-    id: 'ironfront_key',
-    name: 'Ironfront Case Key',
+  tank_key: {
+    id: 'tank_key',
+    name: 'Tank Case Key',
     price: 750,
-    caseId: 'ironfront_case',
-    desc: 'Opens Ironfront Fleet Cases — unlock tanks, ships, and jets.',
-    image: './assets/keys/ironfront-key.png',
+    caseId: 'tank_case',
+    desc: 'Opens Tank Cases — land hulls only.',
+    image: './assets/keys/tank-key.png',
   },
-  coastal_key: {
-    id: 'coastal_key',
-    name: 'Coastal Ops Key',
+  ship_key: {
+    id: 'ship_key',
+    name: 'Ship Case Key',
     price: 850,
-    caseId: 'coastal_case',
-    desc: 'Opens Coastal Ops Cases — ships & strike craft focus.',
-    image: './assets/keys/coastal-key.png',
+    caseId: 'ship_case',
+    desc: 'Opens Ship Cases — sea craft only.',
+    image: './assets/keys/ship-key.png',
   },
-  apex_key: {
-    id: 'apex_key',
-    name: 'Apex Collection Key',
-    price: 1200,
-    caseId: 'apex_case',
-    desc: 'Opens Apex Cases — higher odds at rare fleet craft.',
-    image: './assets/keys/apex-key.png',
+  jet_key: {
+    id: 'jet_key',
+    name: 'Jet Case Key',
+    price: 950,
+    caseId: 'jet_case',
+    desc: 'Opens Jet Cases — air craft only.',
+    image: './assets/keys/jet-key.png',
   },
   warheads_key: {
     id: 'warheads_key',
@@ -155,6 +155,18 @@ export const KEYS = {
   },
 };
 
+/** Legacy case/key ids → domain-locked replacements (inventory migration). */
+export const LEGACY_CASE_MAP = {
+  ironfront_case: 'tank_case',
+  coastal_case: 'ship_case',
+  apex_case: 'jet_case',
+};
+export const LEGACY_KEY_MAP = {
+  ironfront_key: 'tank_key',
+  coastal_key: 'ship_key',
+  apex_key: 'jet_key',
+};
+
 function vehiclesForCase(rarities, filterFn = null) {
   return Object.values(VEHICLES).filter((v) => {
     if (v.starter && !v.crateOnly) return false; // starters aren't crate drops
@@ -165,45 +177,47 @@ function vehiclesForCase(rarities, filterFn = null) {
   });
 }
 
+const ALL_RARITIES = [
+  'consumer', 'industrial', 'milspec', 'restricted', 'classified', 'covert', 'extraordinary',
+];
+
 export const CASES = {
-  ironfront_case: {
-    id: 'ironfront_case',
-    name: 'Ironfront Fleet Case',
-    price: 250,
-    keyId: 'ironfront_key',
-    color: '#c45c28',
-    image: './assets/cases/ironfront-case.png',
-    desc: 'Unlocks unique-looking tanks, ships, and jets for your fleet.',
+  tank_case: {
+    id: 'tank_case',
+    name: 'Tank Case',
+    price: 280,
+    keyId: 'tank_key',
+    color: '#b4c85a',
+    image: './assets/cases/tank-case.png',
+    desc: 'Land fleet only — tanks and tracked hulls. No ships or jets.',
     kind: 'vehicle',
-    contains: () => vehiclesForCase([
-      'consumer', 'industrial', 'milspec', 'restricted', 'classified', 'covert', 'extraordinary',
-    ]),
+    domain: 'land',
+    contains: () => vehiclesForCase(ALL_RARITIES, (v) => v.domain === 'land'),
   },
-  coastal_case: {
-    id: 'coastal_case',
-    name: 'Coastal Ops Case',
-    price: 350,
-    keyId: 'coastal_key',
-    color: '#1d9bf0',
-    image: './assets/cases/coastal-case.png',
-    desc: 'Focused pool: ships and frontline air / land strikers.',
+  ship_case: {
+    id: 'ship_case',
+    name: 'Ship Case',
+    price: 320,
+    keyId: 'ship_key',
+    color: '#50bee6',
+    image: './assets/cases/ship-case.png',
+    desc: 'Sea fleet only — patrol boats to capital ships. No tanks or jets.',
     kind: 'vehicle',
-    contains: () => vehiclesForCase(
-      ['industrial', 'milspec', 'restricted', 'classified', 'covert', 'extraordinary'],
-      (v) => v.domain === 'sea' || v.category === 'rifle' || v.style === 'hydro' || v.style === 'keel' || v.style === 'leviathan'
-    ),
+    domain: 'sea',
+    contains: () => vehiclesForCase(ALL_RARITIES, (v) => v.domain === 'sea'),
   },
-  apex_case: {
-    id: 'apex_case',
-    name: 'Apex Fleet Case',
-    price: 500,
-    keyId: 'apex_key',
-    color: '#e4ae39',
-    image: './assets/cases/apex-case.png',
-    desc: 'High-tier fleet pool. Better odds at Classified+ craft.',
+  jet_case: {
+    id: 'jet_case',
+    name: 'Jet Case',
+    price: 360,
+    keyId: 'jet_key',
+    color: '#e6b45a',
+    image: './assets/cases/jet-case.png',
+    desc: 'Air fleet only — drones, fighters, and bombers. No tanks or ships.',
     kind: 'vehicle',
-    contains: () => vehiclesForCase(['milspec', 'restricted', 'classified', 'covert', 'extraordinary']),
-    weightBoost: { milspec: 1, restricted: 1.4, classified: 1.8, covert: 2.2, extraordinary: 2.5 },
+    domain: 'air',
+    contains: () => vehiclesForCase(ALL_RARITIES, (v) => v.domain === 'air'),
+    weightBoost: { milspec: 1.1, restricted: 1.3, classified: 1.6, covert: 2.0, extraordinary: 2.4 },
   },
   warheads_case: {
     id: 'warheads_case',
@@ -212,7 +226,7 @@ export const CASES = {
     keyId: 'warheads_key',
     color: '#ff5c5c',
     image: './assets/cases/warheads-case.png',
-    desc: 'Ordnance upgrades: bullets, mags, bombs, torpedoes, landmines, and more.',
+    desc: 'Ordnance only — bullets, mags, bombs, torpedoes, landmines, and more.',
     kind: 'item',
     contains: () => warheadsPool(),
     weightBoost: { consumer: 1, industrial: 1.1, milspec: 1.2, restricted: 1.4, classified: 1.6, covert: 1.8, extraordinary: 2 },
@@ -224,31 +238,27 @@ export const CASES = {
     keyId: 'accessories_key',
     color: '#7ec8e8',
     image: './assets/cases/accessories-case.png',
-    desc: 'Permanent vehicle mods: mine detector, engines, plating, scopes, and more.',
+    desc: 'Mods only — mine detector, engines, plating, scopes, and more.',
     kind: 'item',
     contains: () => accessoriesPool(),
     weightBoost: { industrial: 1, milspec: 1.2, restricted: 1.5, classified: 1.8, covert: 2.2 },
   },
 };
 
-/** Roll a vehicle unlock from a case (not a skin). */
+/** Roll a vehicle unlock from a domain-locked case. */
 export function rollVehicleFromCase(caseId) {
   const crate = CASES[caseId];
   if (!crate || crate.kind === 'item') return null;
-  let pool = crate.contains();
-  // Always include crate exclusives that match rarity filters so cases feel special
-  const exclusives = Object.values(VEHICLES).filter((v) => v.crateOnly);
+  const domain = crate.domain;
+  let pool = crate.contains().filter((v) => !domain || v.domain === domain);
+  // Crate exclusives only if they match this case's domain
+  const exclusives = Object.values(VEHICLES).filter(
+    (v) => v.crateOnly && (!domain || v.domain === domain)
+  );
   for (const v of exclusives) {
-    if (!pool.find((x) => x.id === v.id)) {
-      const allowed = crate.id === 'apex_case'
-        ? ['milspec', 'restricted', 'classified', 'covert', 'extraordinary']
-        : null;
-      if (!allowed || allowed.includes(v.rarity)) pool = [...pool, v];
-    }
+    if (!pool.find((x) => x.id === v.id)) pool = [...pool, v];
   }
-  // Also allow non-starter base craft that aren't in pool yet (APC etc. if marked)
-  const unlockables = Object.values(VEHICLES).filter((v) => !v.starter || v.crateOnly);
-  if (!pool.length) pool = unlockables;
+  pool = pool.filter((v) => !domain || v.domain === domain);
   if (!pool.length) return null;
 
   const boost = crate.weightBoost || {};

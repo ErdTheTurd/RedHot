@@ -42,6 +42,7 @@ export const VEHICLES = {
   // Light / sidearm equivalents
   scout_tracker: {
     id: 'scout_tracker',
+    image: './assets/vehicles/scout_tracker.png',
     name: 'Scout Tracker',
     className: 'TANK',
     category: 'sidearm',
@@ -66,6 +67,7 @@ export const VEHICLES = {
   },
   coastal_skiff: {
     id: 'coastal_skiff',
+    image: './assets/vehicles/coastal_skiff.png',
     name: 'Coastal Skiff',
     className: 'SHIP',
     category: 'sidearm',
@@ -91,6 +93,7 @@ export const VEHICLES = {
   },
   wasp_drone: {
     id: 'wasp_drone',
+    image: './assets/vehicles/wasp_drone.png',
     name: 'Wasp Drone',
     className: 'JET',
     category: 'sidearm',
@@ -118,6 +121,7 @@ export const VEHICLES = {
   // Fast attack / SMG equivalents
   apc_crusher: {
     id: 'apc_crusher',
+    image: './assets/vehicles/apc_crusher.png',
     name: 'APC Crusher',
     className: 'TANK',
     category: 'smg',
@@ -141,6 +145,7 @@ export const VEHICLES = {
   },
   patrol_cutter: {
     id: 'patrol_cutter',
+    image: './assets/vehicles/patrol_cutter.png',
     name: 'Patrol Cutter',
     className: 'SHIP',
     category: 'smg',
@@ -165,6 +170,7 @@ export const VEHICLES = {
   },
   falcon_interceptor: {
     id: 'falcon_interceptor',
+    image: './assets/vehicles/falcon_interceptor.png',
     name: 'Falcon Interceptor',
     className: 'JET',
     category: 'smg',
@@ -191,6 +197,7 @@ export const VEHICLES = {
   // Frontline / rifle equivalents
   mbt_anvil: {
     id: 'mbt_anvil',
+    image: './assets/vehicles/mbt_anvil.png',
     name: 'MBT Anvil',
     className: 'TANK',
     category: 'rifle',
@@ -214,6 +221,7 @@ export const VEHICLES = {
   },
   destroyer_hull: {
     id: 'destroyer_hull',
+    image: './assets/vehicles/destroyer_hull.png',
     name: 'Destroyer Hull',
     className: 'SHIP',
     category: 'rifle',
@@ -238,6 +246,7 @@ export const VEHICLES = {
   },
   raptor_strike: {
     id: 'raptor_strike',
+    image: './assets/vehicles/raptor_strike.png',
     name: 'Raptor Strike Jet',
     className: 'JET',
     category: 'rifle',
@@ -264,6 +273,7 @@ export const VEHICLES = {
   // Capital / AWP & heavy equivalents
   siege_titan: {
     id: 'siege_titan',
+    image: './assets/vehicles/siege_titan.png',
     name: 'Siege Titan',
     className: 'TANK',
     category: 'heavy',
@@ -287,6 +297,7 @@ export const VEHICLES = {
   },
   battleship_kronos: {
     id: 'battleship_kronos',
+    image: './assets/vehicles/battleship_kronos.png',
     name: 'Battleship Kronos',
     className: 'SHIP',
     category: 'heavy',
@@ -311,6 +322,7 @@ export const VEHICLES = {
   },
   stealth_bomber: {
     id: 'stealth_bomber',
+    image: './assets/vehicles/stealth_bomber.png',
     name: 'Stealth Bomber',
     className: 'JET',
     category: 'heavy',
@@ -336,6 +348,7 @@ export const VEHICLES = {
   // —— Crate exclusives (unique silhouettes; unlock via cases) ——
   dune_raider: {
     id: 'dune_raider',
+    image: './assets/vehicles/dune_raider.png',
     name: 'Dune Raider',
     className: 'TANK',
     category: 'smg',
@@ -360,6 +373,7 @@ export const VEHICLES = {
   },
   frost_plow: {
     id: 'frost_plow',
+    image: './assets/vehicles/frost_plow.png',
     name: 'Frost Plow',
     className: 'TANK',
     category: 'rifle',
@@ -384,6 +398,7 @@ export const VEHICLES = {
   },
   night_fang: {
     id: 'night_fang',
+    image: './assets/vehicles/night_fang.png',
     name: 'Night Fang',
     className: 'TANK',
     category: 'heavy',
@@ -408,6 +423,7 @@ export const VEHICLES = {
   },
   hydro_lance: {
     id: 'hydro_lance',
+    image: './assets/vehicles/hydro_lance.png',
     name: 'Hydro Lance',
     className: 'SHIP',
     category: 'smg',
@@ -433,6 +449,7 @@ export const VEHICLES = {
   },
   blackwater_keel: {
     id: 'blackwater_keel',
+    image: './assets/vehicles/blackwater_keel.png',
     name: 'Blackwater Keel',
     className: 'SHIP',
     category: 'rifle',
@@ -458,6 +475,7 @@ export const VEHICLES = {
   },
   leviathan_crown: {
     id: 'leviathan_crown',
+    image: './assets/vehicles/leviathan_crown.png',
     name: 'Leviathan Crown',
     className: 'SHIP',
     category: 'heavy',
@@ -483,6 +501,7 @@ export const VEHICLES = {
   },
   needle_dart: {
     id: 'needle_dart',
+    image: './assets/vehicles/needle_dart.png',
     name: 'Needle Dart',
     className: 'JET',
     category: 'smg',
@@ -508,6 +527,7 @@ export const VEHICLES = {
   },
   howler_gunship: {
     id: 'howler_gunship',
+    image: './assets/vehicles/howler_gunship.png',
     name: 'Howler Gunship',
     className: 'JET',
     category: 'rifle',
@@ -533,6 +553,7 @@ export const VEHICLES = {
   },
   eclipse_wing: {
     id: 'eclipse_wing',
+    image: './assets/vehicles/eclipse_wing.png',
     name: 'Eclipse Wing',
     className: 'JET',
     category: 'heavy',

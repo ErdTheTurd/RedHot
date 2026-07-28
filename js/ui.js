@@ -3,7 +3,7 @@ import {
 } from './config.js';
 import { CASES, KEYS, SKINS, RARITY, rarityColor, shopSkinCatalog } from './skins.js';
 import { GEAR_ITEMS, gearItemImageDataUrl } from './gearItems.js';
-import { skinImageDataUrl, vehicleImageDataUrl } from './skinArt.js';
+import { skinImageDataUrl } from './skinArt.js';
 import { SFX } from './audio.js';
 import {
   MAPS, MODES, isMapUnlocked, isModeUnlocked, xpProgress,
@@ -15,9 +15,12 @@ function skinImg(skin) {
   return skinImageDataUrl(skin, domain, 256);
 }
 
-function vehicleImg(vehicle, inventory) {
-  const skin = inventory?.getEquipped?.(vehicle.id) || null;
-  return vehicleImageDataUrl(vehicle, skin, 256);
+function vehicleImg(vehicle) {
+  return vehicle.image || `./assets/vehicles/${vehicle.id}.png`;
+}
+
+function gearImg(item) {
+  return item.image || gearItemImageDataUrl(item);
 }
 
 export function createUI(game, inventory) {
@@ -438,7 +441,7 @@ export function createUI(game, inventory) {
         el.className = `inv-item${selectedInv === v.id ? ' selected' : ''}${eq ? ' equipped' : ''}`;
         el.style.setProperty('--rarity', rarityColor(v.rarity || 'milspec'));
         el.innerHTML = `
-          <img class="inv-swatch" src="${vehicleImg(v, inventory)}" alt="${v.name}" width="256" height="256" loading="lazy" />
+          <img class="inv-swatch" src="${vehicleImg(v)}" alt="${v.name}" width="256" height="256" loading="lazy" />
           <strong>${v.name}</strong>
           <span>${v.className} · ${v.domain.toUpperCase()}</span>
           <em>${RARITY[v.rarity || 'milspec']?.label || ''}${eq ? ' · EQUIPPED' : ''}</em>
@@ -456,7 +459,7 @@ export function createUI(game, inventory) {
         detail.innerHTML = `
           <span style="color:${rarityColor(v.rarity || 'milspec')}">${RARITY[v.rarity || 'milspec']?.label || ''}</span>
           <h3>${v.name}</h3>
-          <img class="inv-swatch-lg" src="${vehicleImg(v, inventory)}" alt="${v.name}" width="256" height="256" />
+          <img class="inv-swatch-lg" src="${vehicleImg(v)}" alt="${v.name}" width="256" height="256" />
           <p class="muted">${v.desc}</p>
           <div class="stat-row"><span>Class</span><strong>${v.className}</strong></div>
           <div class="stat-row"><span>Domain</span><strong>${v.domain.toUpperCase()}</strong></div>
@@ -561,7 +564,7 @@ export function createUI(game, inventory) {
         el.className = `inv-item${selectedInv === item.id ? ' selected' : ''}${equipped ? ' equipped' : ''}`;
         el.style.setProperty('--rarity', rarityColor(item.rarity));
         el.innerHTML = `
-          <img class="inv-swatch" src="${gearItemImageDataUrl(item)}" alt="${item.name}" width="256" height="256" loading="lazy" />
+          <img class="inv-swatch" src="${gearImg(item)}" alt="${item.name}" width="256" height="256" loading="lazy" />
           <strong>${item.name}</strong>
           <span>${item.desc}</span>
           <em>x${row.count}${equipped ? ' · MATCH LOADOUT' : ''}</em>
@@ -581,7 +584,7 @@ export function createUI(game, inventory) {
         detail.innerHTML = `
           <span style="color:${rarityColor(item.rarity)}">${RARITY[item.rarity]?.label || ''}</span>
           <h3>${item.name}</h3>
-          <img class="inv-swatch-lg" src="${gearItemImageDataUrl(item)}" alt="${item.name}" width="256" height="256" />
+          <img class="inv-swatch-lg" src="${gearImg(item)}" alt="${item.name}" width="256" height="256" />
           <p class="muted">${item.desc}</p>
           <div class="stat-row"><span>Owned</span><strong>x${inventory.itemCount(item.id)}</strong></div>
           <div class="stat-row"><span>Loadout</span><strong>${loadout.length}/4</strong></div>
@@ -603,7 +606,7 @@ export function createUI(game, inventory) {
         el.className = `inv-item${selectedInv === item.id ? ' selected' : ''} equipped`;
         el.style.setProperty('--rarity', rarityColor(item.rarity));
         el.innerHTML = `
-          <img class="inv-swatch" src="${gearItemImageDataUrl(item)}" alt="${item.name}" width="256" height="256" loading="lazy" />
+          <img class="inv-swatch" src="${gearImg(item)}" alt="${item.name}" width="256" height="256" loading="lazy" />
           <strong>${item.name}</strong>
           <span>${item.desc}</span>
           <em>PERMANENT</em>
@@ -622,7 +625,7 @@ export function createUI(game, inventory) {
         detail.innerHTML = `
           <span style="color:${rarityColor(item.rarity)}">${RARITY[item.rarity]?.label || ''}</span>
           <h3>${item.name}</h3>
-          <img class="inv-swatch-lg" src="${gearItemImageDataUrl(item)}" alt="${item.name}" width="256" height="256" />
+          <img class="inv-swatch-lg" src="${gearImg(item)}" alt="${item.name}" width="256" height="256" />
           <p class="muted">${item.desc}</p>
           <div class="stat-row"><span>Status</span><strong>ALWAYS ON</strong></div>
         `;
@@ -684,9 +687,9 @@ export function createUI(game, inventory) {
   function reelThumb(entry, caseId) {
     const c = CASES[caseId];
     if (c?.kind === 'item') {
-      return gearItemImageDataUrl(entry);
+      return gearImg(entry);
     }
-    return vehicleImg(entry, inventory);
+    return vehicleImg(entry);
   }
 
   function buildReelPreview(caseId) {
@@ -787,7 +790,7 @@ export function createUI(game, inventory) {
       const sw = $('crate-swatch');
       sw.style.background = 'transparent';
       sw.style.boxShadow = `0 0 40px ${rarityColor(prize.rarity || 'milspec')}`;
-      const imgSrc = kind === 'item' ? gearItemImageDataUrl(prize) : vehicleImg(prize, inventory);
+      const imgSrc = kind === 'item' ? gearImg(prize) : vehicleImg(prize);
       sw.innerHTML = `<img src="${imgSrc}" alt="${prize.name}" style="width:100%;height:100%;object-fit:cover" />`;
       $('crate-result').classList.remove('hidden');
       reelSpinning = false;
@@ -884,7 +887,7 @@ export function createUI(game, inventory) {
       (v) => v.category === buyCat && inventory.ownsVehicle(v.id)
     );
     if (!list.length) {
-      root.innerHTML = `<p class="muted" style="padding:1rem">No unlocked craft in this class.<br/>Open fleet cases in Inventory to unlock tanks, ships, and jets.</p>`;
+      root.innerHTML = `<p class="muted" style="padding:1rem">No unlocked craft in this class.<br/>Open Tank / Ship / Jet cases in Inventory to unlock matching craft.</p>`;
       return;
     }
     for (const v of list) {
@@ -894,7 +897,7 @@ export function createUI(game, inventory) {
       const btn = document.createElement('button');
       btn.className = `buy-item buy-item-skin${cant ? ' cant' : ''}${owned ? ' owned' : ''}${selectedId === v.id ? ' selected' : ''}`;
       btn.innerHTML = `
-        <img class="buy-thumb" src="${vehicleImg(v, inventory)}" alt="" width="64" height="64" />
+        <img class="buy-thumb" src="${vehicleImg(v)}" alt="" width="64" height="64" />
         <div class="name">${v.name}</div>
         <div class="meta">${v.className} · ${skin?.shortName || 'Stock'}</div>
         <div class="price">${formatMoney(v.price)}</div>`;
@@ -985,7 +988,7 @@ export function createUI(game, inventory) {
     root.innerHTML = `
       <span class="muted">${v.className}</span>
       <h3>${v.name}</h3>
-      <img class="inv-swatch-lg" src="${vehicleImg(v, inventory)}" alt="${v.name}" width="256" height="256" style="margin:0.5rem 0" />
+      <img class="inv-swatch-lg" src="${vehicleImg(v)}" alt="${v.name}" width="256" height="256" style="margin:0.5rem 0" />
       <p class="muted">${v.desc}</p>
       <div class="stat-row"><span>Fleet</span><strong>UNLOCKED</strong></div>
       <div class="stat-row"><span>Paint</span><strong style="color:${rarityColor(skin.rarity)}">${skin.shortName}</strong></div>
