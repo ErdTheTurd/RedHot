@@ -211,6 +211,32 @@ html, body {
   margin-top: 1.75rem;
 }
 
+.look-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 1rem;
+  cursor: pointer;
+  color: var(--muted, #9aabbc);
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+  user-select: none;
+}
+
+.look-toggle input {
+  width: 1.05rem;
+  height: 1.05rem;
+  accent-color: #e85d04;
+  cursor: pointer;
+}
+
+.look-toggle em {
+  font-style: normal;
+  opacity: 0.7;
+  font-size: 0.85em;
+}
+
 .btn {
   font-family: var(--font-display);
   font-weight: 700;

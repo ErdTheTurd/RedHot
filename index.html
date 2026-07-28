@@ -57,6 +57,10 @@
           <button class="btn btn-ghost" id="btn-inventory">INVENTORY</button>
           <button class="btn btn-ghost" id="btn-howto">BRIEFING</button>
         </div>
+        <label class="look-toggle" id="look-toggle">
+          <input type="checkbox" id="chk-roblox-look" />
+          <span>Roblox look <em>(hold RMB to turn)</em></span>
+        </label>
       </div>
       <div class="menu-strip">
         <div class="strip-item"><span>TANK</span><em>Ground dominance</em></div>
@@ -83,7 +87,7 @@
           <li><strong>Bank</strong> — Match payouts go to your persistent bank (saved in this browser).</li>
           <li><strong>Armory</strong> — Spend bank credits on fleet, warheads, and accessories crates + keys.</li>
           <li><strong>Inventory</strong> — Equip fleet, paints, warheads loadout, and view accessories.</li>
-          <li><strong>Controls</strong> — WASD/arrows (strafe with A/D and ←/→) · Hold <em>Right Mouse</em> to look/turn (Roblox-style) · <em>F gun</em> · <em>B bombs</em> (jets) / buy · <em>T torpedo</em> · <em>X landmine</em> · Space jump · R reload · E plant/defuse · Tab score · 1–3 slots · G smoke · V EMP · <code>/give-tokens</code> · <code>/give-xp</code></li>
+          <li><strong>Controls</strong> — WASD/arrows (←/→ strafe) · Mouse look by default · Optional <em>Roblox look</em> on the menu (hold RMB to turn) · <em>F gun</em> · <em>B bombs</em> (jets) / buy · <em>T torpedo</em> · <em>X landmine</em> · Space jump · R reload · E plant/defuse · Tab score · 1–3 slots · G smoke · V EMP · <code>/give-tokens</code> · <code>/give-xp</code></li>
         </ul>
         <button class="btn btn-primary" id="btn-howto-back">RETURN</button>
       </div>
@@ -297,7 +301,7 @@
 
       <div class="hud-slots" id="hud-slots"></div>
       <canvas id="minimap" class="minimap" width="160" height="160"></canvas>
-      <div class="hud-hint" id="hud-hint">WASD/Arrows · Hold RMB look/turn · F Gun · B Bomb / Buy · T Torpedo · X Mine · Space Jump · R Reload · Esc</div>
+      <div class="hud-hint" id="hud-hint">WASD/Arrows · Mouse look · F Gun · B Bomb / Buy · T Torpedo · X Mine · Space Jump · R Reload · Esc</div>
     </section>
 
     <!-- SCOREBOARD -->

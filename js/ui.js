@@ -68,6 +68,17 @@ export function createUI(game, inventory) {
   }
 
   // —— Menu ——
+  const robloxChk = $('chk-roblox-look');
+  if (robloxChk) {
+    robloxChk.checked = game.input?.lookMode === 'roblox';
+    robloxChk.onchange = () => {
+      const mode = robloxChk.checked ? 'roblox' : 'default';
+      game.input?.setLookMode?.(mode);
+      SFX.ui();
+      toast(mode === 'roblox' ? 'Roblox look on — hold RMB to turn' : 'Classic mouse look on');
+    };
+  }
+
   $('btn-play').onclick = () => {
     SFX.ui();
     renderOps();
@@ -1074,17 +1085,20 @@ export function createUI(game, inventory) {
         hint.textContent = `CMD ${game.input.cmdBuffer || '/'}  ·  Enter run · Esc cancel`;
         hint.style.color = '#ffe08a';
       } else if (game.mode?.freeRoam) {
-        hint.textContent = 'Vigilante · Hold RMB look · F Gun · B Bombs · X Mine · C Arsenal · T Torpedo · Esc Extract';
+        hint.textContent = 'Vigilante · F Gun · B Bombs · X Mine · C Arsenal · T Torpedo · Esc Extract';
         hint.style.color = '';
       } else if (v.domain === 'air') {
-        hint.textContent = 'Hold RMB look · F Gun · B Bombs · R Reload · Space Jump · 1–3 Slots';
+        hint.textContent = 'F Gun · B Bombs · R Reload · Space Jump · 1–3 Slots · G Smoke · V EMP';
         hint.style.color = '';
       } else if (v.domain === 'sea') {
-        hint.textContent = 'Hold RMB look · F Gun · T Torpedo · X Mine · R Reload · Space Jump';
+        hint.textContent = 'F Gun · T Torpedo · X Mine · R Reload · Space Jump · 1–3 Slots';
         hint.style.color = '';
       } else {
-        hint.textContent = 'WASD/←→ strafe · Hold RMB look/turn · F Gun · B Buy · X Mine · R Reload';
+        hint.textContent = 'WASD/←→ · Mouse look · F Gun · B Buy · X Mine · R Reload · E Plant';
         hint.style.color = '';
+      }
+      if (game.input?.lookMode === 'roblox' && !game.input?.cmdMode) {
+        hint.textContent = `${hint.textContent} · Hold RMB to look`;
       }
     }
 
