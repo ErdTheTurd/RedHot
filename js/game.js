@@ -679,7 +679,7 @@ export class Game {
     if (unit.sinkT > 1.15) {
       const res = unit.takeDamage(32 * dt, null, 1);
       if (res.killed) {
-        this.spawnExplosion(unit.mesh.position.clone());
+        this.beginDeathFall(unit);
         this.ui.killFeed(unit, unit, 'SANK');
         if (unit.isPlayer) this.ui.toast('You sank');
         else this.ui.toast(`${unit.name} sank`);
