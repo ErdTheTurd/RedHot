@@ -475,6 +475,85 @@ export function spawnEmpBurst(scene, position) {
   return group;
 }
 
+/** Burning wreck fire/smoke attached to a dying vehicle mesh */
+export function attachDeathFire(mesh) {
+  const group = new THREE.Group();
+  group.name = 'deathFire';
+  group.userData.isDeathFire = true;
+
+  for (let i = 0; i < 6; i++) {
+    const flame = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: getMuzzleTex(),
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        color: i % 2 ? 0xff6622 : 0xffcc44,
+        opacity: 0.85,
+      })
+    );
+    flame.position.set(
+      (Math.random() - 0.5) * 1.6,
+      0.4 + Math.random() * 1.2,
+      (Math.random() - 0.5) * 1.6
+    );
+    const s = 1.4 + Math.random() * 1.8;
+    flame.scale.set(s * 0.7, s, 1);
+    flame.userData.baseScale = s;
+    flame.userData.flicker = Math.random() * Math.PI * 2;
+    group.add(flame);
+  }
+
+  for (let i = 0; i < 4; i++) {
+    const smoke = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: getSmokeTex(),
+        transparent: true,
+        depthWrite: false,
+        opacity: 0.55,
+        color: 0x2a2a2a,
+      })
+    );
+    smoke.position.set((Math.random() - 0.5) * 1.2, 1.2 + i * 0.35, (Math.random() - 0.5) * 1.2);
+    smoke.scale.set(2.2, 2.2, 1);
+    smoke.userData.isSmoke = true;
+    smoke.userData.rise = 0.8 + Math.random() * 0.6;
+    group.add(smoke);
+  }
+
+  const light = new THREE.PointLight(0xff5511, 18, 16, 2);
+  light.position.set(0, 1.2, 0);
+  group.add(light);
+
+  mesh.add(group);
+  return group;
+}
+
+export function updateDeathFire(group, dt, t) {
+  if (!group) return;
+  group.children.forEach((ch) => {
+    if (ch.isSprite && ch.userData.baseScale) {
+      ch.userData.flicker = (ch.userData.flicker || 0) + dt * (8 + Math.random() * 6);
+      const pulse = 0.75 + Math.sin(ch.userData.flicker) * 0.35;
+      const s = ch.userData.baseScale * pulse;
+      ch.scale.set(s * 0.65, s, 1);
+      ch.material.opacity = 0.55 + Math.random() * 0.4;
+      ch.position.y += Math.sin(t * 10 + ch.userData.flicker) * 0.01;
+    } else if (ch.isSprite && ch.userData.isSmoke) {
+      ch.position.y += (ch.userData.rise || 0.8) * dt;
+      ch.material.opacity = Math.max(0.15, (ch.material.opacity || 0.5) - dt * 0.08);
+      ch.scale.multiplyScalar(1 + dt * 0.35);
+      if (ch.position.y > 5) {
+        ch.position.y = 1.0;
+        ch.scale.set(2.2, 2.2, 1);
+        ch.material.opacity = 0.55;
+      }
+    } else if (ch.isLight) {
+      ch.intensity = 12 + Math.sin(t * 14) * 8 + Math.random() * 4;
+    }
+  });
+}
+
 export function orientProjectile(mesh, dir) {
   const look = dir.clone().normalize();
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), look);
