@@ -10,6 +10,8 @@ import { InventoryService } from './inventory.js';
 import { SFX } from './audio.js';
 import { makeSkyDome, makeEnvMapTexture } from './textures.js';
 import { getGraphicsPreset, resolveQuality, setGraphicsPreset } from './graphics.js';
+import { getAccount } from './account.js';
+import { NetClient } from './net.js';
 
 const bootError = document.getElementById('boot-error');
 const bootErrorMsg = document.getElementById('boot-error-msg');
@@ -167,6 +169,7 @@ async function boot() {
   const inventory = new InventoryService();
   const input = createInput();
   const gameRef = { game: null };
+  const net = new NetClient({ account: getAccount() });
   const ui = createUI({
     get player() { return gameRef.game?.player; },
     get score() { return gameRef.game?.score || { raiders: 0, sentinels: 0 }; },
@@ -183,16 +186,20 @@ async function boot() {
     get roundNumber() { return gameRef.game?.roundNumber || 0; },
     get input() { return input; },
     get profile() { return inventory.profile; },
+    get running() { return !!gameRef.game?.running; },
+    get netHumans() { return gameRef.game?.netHumans || []; },
+    get buyVotes() { return gameRef.game?.buyVotes || {}; },
     startMatch(opts) { gameRef.game.startMatch(opts); },
     closeBuyMenu() { gameRef.game.closeBuyMenu(); },
     buyVehicle(id) { gameRef.game.buyVehicle(id); },
     buyGear(id) { gameRef.game.buyGear(id); },
+    castBuyVote(sec) { gameRef.game?.castBuyVote?.(sec); },
     setGraphicsQuality(preset) {
       const saved = setGraphicsPreset(preset);
       return gameRef.game.setGraphicsQuality(saved);
     },
     get quality() { return gameRef.game?.quality; },
-  }, inventory);
+  }, inventory, { net });
 
   const game = new Game({
     scene,
@@ -202,6 +209,7 @@ async function boot() {
     inventory,
     lighting: { sun, hemi },
     quality,
+    net,
     onQualityChange: (q) => applyRendererQuality(q),
   });
   gameRef.game = game;

@@ -1,5 +1,6 @@
 import {
   CATEGORIES, VEHICLES, GEAR, formatMoney, formatTime, TEAMS, BOT_NAMES,
+  BUY_VOTE_OPTIONS, BUY_TIME_MAX,
 } from './config.js';
 import { CASES, KEYS, SKINS, RARITY, rarityColor, shopSkinCatalog } from './skins.js';
 import { GEAR_ITEMS, gearItemImageDataUrl } from './gearItems.js';
@@ -10,6 +11,9 @@ import {
 } from './progression.js';
 import { MAX_ADS_PER_DAY } from './ads.js';
 import { getGraphicsPreset, setGraphicsPreset } from './graphics.js';
+import {
+  hasAccount, getAccount, isLoggedIn, createAccount, loginAccount,
+} from './account.js';
 
 function skinImg(skin) {
   const domain = VEHICLES[skin.vehicleId]?.domain || 'land';
@@ -24,10 +28,12 @@ function gearImg(item) {
   return item.image || gearItemImageDataUrl(item);
 }
 
-export function createUI(game, inventory) {
+export function createUI(game, inventory, opts = {}) {
   const $ = (id) => document.getElementById(id);
+  const net = opts.net || null;
 
   const screens = {
+    auth: $('screen-auth'),
     menu: $('screen-menu'),
     howto: $('screen-howto'),
     ops: $('screen-ops'),
@@ -57,28 +63,39 @@ export function createUI(game, inventory) {
     sentinels: ['BlueDock', 'Tidewall', 'FrostBit', 'Harbor', 'Vigil', 'NorthLock', 'Seaglass'],
   };
   let mmTimer = null;
+  let mmHelloTimer = null;
   let mmSecondsLeft = MM_WAIT_SEC;
   let mmTeam = TEAMS.RAIDERS;
   let mmRoster = { raiders: [], sentinels: [] };
+  let mmLobbyMembers = new Map(); // clientId -> { username, team }
+  let mmNetMode = false;
+  let mmLaunching = false;
+  let unsubLobby = null;
+  let myBuyVote = null;
+
+  function callsign() {
+    return inventory.profile?.callsign || getAccount()?.username || 'You';
+  }
 
   function emptySlot() {
-    return { name: 'Open seat', kind: 'empty' };
+    return { name: 'Open seat', kind: 'empty', clientId: null };
   }
 
   function blankRoster(playerTeam) {
-    const youName = inventory.profile?.callsign || 'You';
+    const youName = callsign();
     const raiders = Array.from({ length: TEAM_SIZE }, emptySlot);
     const sentinels = Array.from({ length: TEAM_SIZE }, emptySlot);
+    const selfId = net?.clientId || 'local';
     if (playerTeam === TEAMS.RAIDERS) {
-      raiders[0] = { name: youName, kind: 'you' };
+      raiders[0] = { name: youName, kind: 'you', clientId: selfId };
     } else {
-      sentinels[0] = { name: youName, kind: 'you' };
+      sentinels[0] = { name: youName, kind: 'you', clientId: selfId };
     }
     return { raiders, sentinels };
   }
 
   function renderMmSlots() {
-    const paint = (listId, slots, team) => {
+    const paint = (listId, slots) => {
       const ul = $(listId);
       if (!ul) return;
       ul.innerHTML = '';
@@ -87,6 +104,7 @@ export function createUI(game, inventory) {
         const filled = slot.kind !== 'empty';
         if (filled) li.classList.add('filled');
         if (slot.kind === 'you') li.classList.add('you');
+        if (slot.kind === 'human') li.classList.add('human');
         const kindLabel = slot.kind === 'you' ? 'YOU'
           : slot.kind === 'human' ? 'PLAYER'
             : slot.kind === 'ai' ? 'AI' : 'OPEN';
@@ -94,8 +112,8 @@ export function createUI(game, inventory) {
         ul.appendChild(li);
       });
     };
-    paint('mm-slots-raiders', mmRoster.raiders, 'raiders');
-    paint('mm-slots-sentinels', mmRoster.sentinels, 'sentinels');
+    paint('mm-slots-raiders', mmRoster.raiders);
+    paint('mm-slots-sentinels', mmRoster.sentinels);
   }
 
   function formatMmClock(sec) {
@@ -105,10 +123,80 @@ export function createUI(game, inventory) {
     return `${m}:${String(r).padStart(2, '0')}`;
   }
 
+  function humanCountInRoster(roster = mmRoster) {
+    let n = 0;
+    for (const team of ['raiders', 'sentinels']) {
+      for (const s of roster[team] || []) {
+        if (s.kind === 'you' || s.kind === 'human') n += 1;
+      }
+    }
+    return n;
+  }
+
+  function seatMember(member) {
+    if (!member?.clientId) return;
+    const team = member.team === TEAMS.SENTINELS ? 'sentinels' : 'raiders';
+    const selfId = net?.clientId;
+    // Already seated?
+    for (const t of ['raiders', 'sentinels']) {
+      const idx = mmRoster[t].findIndex((s) => s.clientId === member.clientId);
+      if (idx >= 0) {
+        mmRoster[t][idx] = {
+          name: member.username,
+          kind: member.clientId === selfId ? 'you' : 'human',
+          clientId: member.clientId,
+        };
+        return;
+      }
+    }
+    // Prefer keeping local player on seat 0 of their team
+    let idx = mmRoster[team].findIndex((s) => s.kind === 'empty');
+    if (idx < 0) return;
+    if (member.clientId === selfId) {
+      // Ensure you are seat 0
+      const empty0 = mmRoster[team][0]?.kind === 'empty';
+      idx = empty0 ? 0 : idx;
+    }
+    mmRoster[team][idx] = {
+      name: member.username,
+      kind: member.clientId === selfId ? 'you' : 'human',
+      clientId: member.clientId,
+    };
+  }
+
+  function rebuildRosterFromMembers() {
+    mmRoster = blankRoster(mmTeam);
+    // Clear auto-you then re-seat everyone including self from members map
+    for (const team of ['raiders', 'sentinels']) {
+      mmRoster[team] = Array.from({ length: TEAM_SIZE }, emptySlot);
+    }
+    const ordered = [...mmLobbyMembers.values()].sort((a, b) => a.clientId.localeCompare(b.clientId));
+    for (const m of ordered) seatMember(m);
+    // Ensure local player always present
+    if (net?.clientId && ![...mmLobbyMembers.keys()].includes(net.clientId)) {
+      seatMember({ clientId: net.clientId, username: callsign(), team: mmTeam });
+    }
+    renderMmSlots();
+  }
+
   function stopMatchmaking(resetUi = true) {
     if (mmTimer) {
       clearInterval(mmTimer);
       mmTimer = null;
+    }
+    if (mmHelloTimer) {
+      clearInterval(mmHelloTimer);
+      mmHelloTimer = null;
+    }
+    if (typeof unsubLobby === 'function') {
+      unsubLobby();
+      unsubLobby = null;
+    }
+    mmLaunching = false;
+    mmNetMode = false;
+    mmLobbyMembers = new Map();
+    if (net && (net.status === 'searching' || net.status === 'lobby')) {
+      net.leaveLobby();
     }
     if (resetUi) {
       $('team-matchmaking')?.classList.add('hidden');
@@ -118,38 +206,41 @@ export function createUI(game, inventory) {
     }
   }
 
-  function fillRemainingWithAi() {
+  function fillRemainingWithAi(keepHumans = false) {
     for (const team of ['raiders', 'sentinels']) {
       const pool = [...(BOT_NAMES[team] || FAKE_JOIN_NAMES[team])];
       const used = new Set(mmRoster[team].filter((s) => s.kind !== 'empty').map((s) => s.name));
       mmRoster[team] = mmRoster[team].map((slot) => {
         if (slot.kind === 'you') return slot;
-        // Local-only: found “players” and empty seats deploy as AI with names
-        if (slot.kind === 'human') return { name: slot.name, kind: 'ai' };
+        if (slot.kind === 'human') {
+          return keepHumans
+            ? slot
+            : { name: slot.name, kind: 'ai', clientId: null };
+        }
         if (slot.kind !== 'empty') return slot;
         let name = pool.find((n) => !used.has(n)) || `AI-${team[0].toUpperCase()}${used.size}`;
         used.add(name);
-        return { name, kind: 'ai' };
+        return { name, kind: 'ai', clientId: null };
       });
     }
     renderMmSlots();
   }
 
   function tryFakeJoin() {
-    // Chance to seat a “found” human on either team while searching
+    // Only pad with theatrical joins when nobody else is actually online in this lobby
+    if (mmNetMode && mmLobbyMembers.size > 1) return;
     const teams = ['raiders', 'sentinels'];
     const order = Math.random() > 0.5 ? teams : teams.slice().reverse();
     for (const team of order) {
       const idx = mmRoster[team].findIndex((s) => s.kind === 'empty');
       if (idx < 0) continue;
-      // Never overwrite the player's reserved seat (index 0 on their team is already filled)
       const pool = FAKE_JOIN_NAMES[team].filter(
         (n) => !mmRoster[team].some((s) => s.name === n)
       );
       if (!pool.length) continue;
       if (Math.random() > 0.55) continue;
       const name = pool[Math.floor(Math.random() * pool.length)];
-      mmRoster[team][idx] = { name, kind: 'human' };
+      mmRoster[team][idx] = { name, kind: 'human', clientId: null };
       if ($('mm-sub')) $('mm-sub').textContent = `${name} joined ${team === 'raiders' ? 'Raiders' : 'Sentinels'}`;
       SFX.ui();
       renderMmSlots();
@@ -157,24 +248,167 @@ export function createUI(game, inventory) {
     }
   }
 
-  function launchMatchFromMm() {
+  function publishHostLobbyState() {
+    if (!net?.isLobbyHost) return;
+    net.publishLobbyState({
+      secondsLeft: mmSecondsLeft,
+      mapId: opsMap,
+      modeId: opsMode,
+      roster: {
+        raiders: mmRoster.raiders.map((s) => ({ ...s })),
+        sentinels: mmRoster.sentinels.map((s) => ({ ...s })),
+      },
+      members: [...mmLobbyMembers.values()],
+    });
+  }
+
+  function launchMatchFromMm(fromNetStart = null) {
+    if (mmLaunching) return;
+    mmLaunching = true;
     stopMatchmaking(false);
-    if ($('mm-status')) $('mm-status').textContent = 'LOCKING ROSTER';
-    if ($('mm-sub')) $('mm-sub').textContent = 'Empty seats filled with AI. Deploying…';
-    fillRemainingWithAi();
-    const roster = {
-      raiders: mmRoster.raiders.map((s) => ({ name: s.name, kind: s.kind })),
-      sentinels: mmRoster.sentinels.map((s) => ({ name: s.name, kind: s.kind })),
-    };
+
+    let roster;
+    let team = mmTeam;
+    let mapId = opsMap;
+    let modeId = opsMode;
+    let matchId = null;
+    let netHumans = [];
+
+    if (fromNetStart) {
+      roster = fromNetStart.roster;
+      mapId = fromNetStart.mapId || opsMap;
+      modeId = fromNetStart.modeId || opsMode;
+      matchId = fromNetStart.matchId;
+      mmRoster = {
+        raiders: (roster.raiders || []).map((s) => ({ ...s })),
+        sentinels: (roster.sentinels || []).map((s) => ({ ...s })),
+      };
+      fillRemainingWithAi(true);
+      roster = {
+        raiders: mmRoster.raiders.map((s) => ({ ...s })),
+        sentinels: mmRoster.sentinels.map((s) => ({ ...s })),
+      };
+      team = mmTeam;
+      for (const side of ['raiders', 'sentinels']) {
+        if (roster[side].some((s) => s.clientId && s.clientId === net?.clientId)) {
+          team = side;
+          break;
+        }
+      }
+      if (net && matchId) {
+        net.attachMatch(matchId, fromNetStart.hostId === net.clientId);
+      }
+    } else {
+      if ($('mm-status')) $('mm-status').textContent = 'LOCKING ROSTER';
+      if ($('mm-sub')) {
+        $('mm-sub').textContent = humanCountInRoster() > 1
+          ? 'Deploying live operators + AI fill…'
+          : 'Empty seats filled with AI. Deploying…';
+      }
+      fillRemainingWithAi(mmNetMode && humanCountInRoster() > 1);
+      roster = {
+        raiders: mmRoster.raiders.map((s) => ({ ...s })),
+        sentinels: mmRoster.sentinels.map((s) => ({ ...s })),
+      };
+      if (mmNetMode && net?.isLobbyHost) {
+        matchId = `M${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+        net.publishMatchStart({
+          matchId,
+          mapId,
+          modeId,
+          team,
+          roster,
+        });
+        net.attachMatch(matchId, true);
+      }
+    }
+
+    for (const side of ['raiders', 'sentinels']) {
+      for (const s of roster[side]) {
+        if ((s.kind === 'human' || s.kind === 'you') && s.clientId) {
+          netHumans.push({
+            clientId: s.clientId,
+            username: s.name,
+            team: side,
+          });
+        }
+      }
+    }
+
+    const delay = fromNetStart ? 200 : 650;
     setTimeout(() => {
       stopMatchmaking(true);
       game.startMatch({
-        team: mmTeam,
-        mapId: opsMap,
-        modeId: opsMode,
+        team,
+        mapId,
+        modeId,
         roster,
+        net: net && matchId ? {
+          enabled: true,
+          matchId,
+          isHost: !!net.isMatchHost,
+          humans: netHumans,
+          clientId: net.clientId,
+        } : null,
       });
-    }, 650);
+    }, delay);
+  }
+
+  function onLobbyMessage(msg) {
+    if (!msg) return;
+    if (msg.type === 'hello' && msg.data) {
+      const d = msg.data;
+      if (!d.clientId) return;
+      mmLobbyMembers.set(d.clientId, {
+        clientId: d.clientId,
+        username: d.username || 'Operator',
+        team: d.team === TEAMS.SENTINELS ? TEAMS.SENTINELS : TEAMS.RAIDERS,
+      });
+      if (net?.isLobbyHost) {
+        rebuildRosterFromMembers();
+        publishHostLobbyState();
+        const n = mmLobbyMembers.size;
+        if ($('mm-sub')) {
+          $('mm-sub').textContent = n > 1
+            ? `${n} live operators in lobby — syncing fleets…`
+            : 'Waiting for other operators on this theater…';
+        }
+      }
+    } else if (msg.type === 'state' && msg.data && !net?.isLobbyHost) {
+      const d = msg.data;
+      if (typeof d.secondsLeft === 'number') {
+        mmSecondsLeft = d.secondsLeft;
+        if ($('mm-countdown')) $('mm-countdown').textContent = formatMmClock(mmSecondsLeft);
+      }
+      if (d.roster?.raiders && d.roster?.sentinels) {
+        mmRoster = {
+          raiders: d.roster.raiders.map((s) => ({ ...s })),
+          sentinels: d.roster.sentinels.map((s) => ({ ...s })),
+        };
+        // Mark local seat as you
+        for (const side of ['raiders', 'sentinels']) {
+          mmRoster[side] = mmRoster[side].map((s) => (
+            s.clientId && s.clientId === net?.clientId
+              ? { ...s, kind: 'you' }
+              : s
+          ));
+        }
+        renderMmSlots();
+      }
+      if (Array.isArray(d.members)) {
+        mmLobbyMembers = new Map(d.members.map((m) => [m.clientId, m]));
+      }
+      const n = humanCountInRoster();
+      if ($('mm-status')) {
+        $('mm-status').textContent = n > 1 ? 'LIVE LOBBY' : 'SEARCHING FOR OPERATORS';
+      }
+      if ($('mm-sub') && n > 1) {
+        $('mm-sub').textContent = `${n} operators locked in — host controls the clock`;
+      }
+    } else if (msg.type === 'start' && msg.data) {
+      if (net?.isLobbyHost) return; // host already launching
+      launchMatchFromMm(msg.data);
+    }
   }
 
   function startMatchmaking(team) {
@@ -182,26 +416,53 @@ export function createUI(game, inventory) {
     mmTeam = team;
     mmSecondsLeft = MM_WAIT_SEC;
     mmRoster = blankRoster(team);
+    mmLobbyMembers = new Map();
+    mmLaunching = false;
     $('team-pick')?.classList.add('hidden');
     $('team-matchmaking')?.classList.remove('hidden');
     if ($('mm-status')) $('mm-status').textContent = 'SEARCHING FOR OPERATORS';
-    if ($('mm-sub')) {
-      $('mm-sub').textContent = team === TEAMS.RAIDERS
-        ? 'You locked Raiders. Finding attackers & defenders…'
-        : 'You locked Sentinels. Finding defenders & raiders…';
-    }
     if ($('mm-countdown')) $('mm-countdown').textContent = formatMmClock(mmSecondsLeft);
     renderMmSlots();
     SFX.ui();
 
-    mmTimer = setInterval(() => {
-      mmSecondsLeft -= 1;
-      if ($('mm-countdown')) $('mm-countdown').textContent = formatMmClock(mmSecondsLeft);
-      // Stagger joins across the minute
-      if (mmSecondsLeft > 3 && mmSecondsLeft % 7 === 0) tryFakeJoin();
-      if (mmSecondsLeft <= 0) {
-        launchMatchFromMm();
+    mmNetMode = !!(net?.connected);
+    if (mmNetMode) {
+      const { isHost } = net.enterSearch({ mapId: opsMap, modeId: opsMode, team });
+      mmLobbyMembers.set(net.clientId, {
+        clientId: net.clientId,
+        username: callsign(),
+        team,
+      });
+      unsubLobby = net.on('lobby', onLobbyMessage);
+      net.publishHello();
+      mmHelloTimer = setInterval(() => net.publishHello(), 3000);
+      if (isHost) {
+        rebuildRosterFromMembers();
+        publishHostLobbyState();
       }
+      if ($('mm-sub')) {
+        $('mm-sub').textContent = isHost
+          ? 'Live relay up — hosting this lobby for your theater…'
+          : 'Joining a live lobby on this theater…';
+      }
+    } else if ($('mm-sub')) {
+      $('mm-sub').textContent = team === TEAMS.RAIDERS
+        ? 'Offline search — Raiders locked. AI will fill empty seats…'
+        : 'Offline search — Sentinels locked. AI will fill empty seats…';
+    }
+
+    mmTimer = setInterval(() => {
+      // Host (or offline) owns the countdown
+      if (!mmNetMode || net?.isLobbyHost) {
+        mmSecondsLeft -= 1;
+        if (mmSecondsLeft > 3 && mmSecondsLeft % 7 === 0) tryFakeJoin();
+        if (mmNetMode && net?.isLobbyHost) publishHostLobbyState();
+        if (mmSecondsLeft <= 0) {
+          launchMatchFromMm();
+          return;
+        }
+      }
+      if ($('mm-countdown')) $('mm-countdown').textContent = formatMmClock(mmSecondsLeft);
     }, 1000);
   }
 
@@ -209,6 +470,10 @@ export function createUI(game, inventory) {
     Object.entries(screens).forEach(([k, el]) => {
       if (el) el.classList.toggle('active', k === name);
     });
+    if (net) {
+      if (name === 'menu') net.setStatus('menu', {});
+      else if (name === 'ops') net.setStatus('ops', { mapId: opsMap, modeId: opsMode });
+    }
   }
 
   function hideAllScreens() {
@@ -224,9 +489,186 @@ export function createUI(game, inventory) {
     }
     if ($('shop-wallet')) $('shop-wallet').textContent = w;
     if ($('inv-wallet')) $('inv-wallet').textContent = w;
+    if ($('menu-callsign')) {
+      $('menu-callsign').textContent = callsign();
+    }
   }
 
+  function renderOnlinePanel(list) {
+    const ul = $('online-list');
+    const count = $('online-count');
+    const hint = $('online-hint');
+    const label = $('menu-online-label');
+    if (!ul) return;
+    const others = (list || []).filter((p) => p.clientId !== net?.clientId);
+    const total = others.length + (net?.connected ? 1 : 0);
+    if (count) count.textContent = String(total);
+    ul.innerHTML = '';
+    const rows = net?.connected
+      ? [{ username: callsign(), status: 'you', clientId: net.clientId }, ...others]
+      : others;
+    for (const p of rows.slice(0, 12)) {
+      const li = document.createElement('li');
+      const st = p.clientId === net?.clientId ? 'you' : (p.status || 'online');
+      li.innerHTML = `<span>${p.username}</span><em class="st-${st}">${st === 'you' ? 'YOU' : String(st).toUpperCase()}</em>`;
+      ul.appendChild(li);
+    }
+    if (hint) {
+      if (!net?.connected) hint.textContent = 'Relay offline — solo / AI matchmaking available.';
+      else if (others.length === 0) hint.textContent = 'You are alone online. Open this page on another device/browser to co-op.';
+      else hint.textContent = 'Deploy into the same map & mode to share a live lobby.';
+    }
+    if (label) {
+      label.textContent = net?.connected
+        ? `ONLINE · ${total} OPERATOR${total === 1 ? '' : 'S'}`
+        : 'OFFLINE · LOCAL PLAY';
+    }
+  }
+
+  function wireAuth() {
+    const createPanel = $('auth-create-panel');
+    const loginPanel = $('auth-login-panel');
+    const existing = getAccount();
+
+    if (existing) {
+      createPanel?.classList.add('hidden');
+      loginPanel?.classList.remove('hidden');
+      if ($('auth-login-user')) $('auth-login-user').value = existing.username;
+      if (!existing.passHash) {
+        $('auth-login-pass-wrap')?.classList.add('hidden');
+      }
+    } else {
+      createPanel?.classList.remove('hidden');
+      loginPanel?.classList.add('hidden');
+    }
+
+    const showErr = (id, msg) => {
+      const el = $(id);
+      if (!el) return;
+      el.textContent = msg || '';
+      el.classList.toggle('hidden', !msg);
+    };
+
+    $('btn-auth-create')?.addEventListener('click', async () => {
+      showErr('auth-create-error', '');
+      const res = await createAccount(
+        $('auth-create-user')?.value,
+        $('auth-create-pass')?.value
+      );
+      if (!res.ok) {
+        showErr('auth-create-error', res.reason);
+        return;
+      }
+      inventory.setCallsign(res.account.username);
+      SFX.ui();
+      await finishAuth(res.account);
+    });
+
+    $('btn-auth-login')?.addEventListener('click', async () => {
+      showErr('auth-login-error', '');
+      const res = await loginAccount(
+        $('auth-login-user')?.value,
+        $('auth-login-pass')?.value
+      );
+      if (!res.ok) {
+        showErr('auth-login-error', res.reason);
+        return;
+      }
+      inventory.setCallsign(res.account.username);
+      SFX.ui();
+      await finishAuth(res.account);
+    });
+
+    // Enter key submits
+    for (const id of ['auth-create-user', 'auth-create-pass']) {
+      $(id)?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') $('btn-auth-create')?.click();
+      });
+    }
+    for (const id of ['auth-login-user', 'auth-login-pass']) {
+      $(id)?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') $('btn-auth-login')?.click();
+      });
+    }
+  }
+
+  async function finishAuth(account) {
+    if (net) {
+      net.account = account;
+      try {
+        await net.connect();
+        toast('Online relay connected');
+      } catch (e) {
+        console.warn(e);
+        toast('Playing offline — relay unavailable');
+      }
+    }
+    refreshMeta();
+    renderOnlinePanel(net?.onlineOperators?.() || []);
+    showScreen('menu');
+  }
+
+  function gateAuthOrMenu() {
+    wireAuth();
+    if (isLoggedIn() && hasAccount()) {
+      const acc = getAccount();
+      inventory.setCallsign(acc.username);
+      finishAuth(acc);
+    } else {
+      showScreen('auth');
+    }
+  }
+
+  function renderBuyVote() {
+    const el = $('buy-vote');
+    if (!el) return;
+    const humans = game.netHumans?.length || 0;
+    const show = game.running && game.phase === 'buy' && humans >= 2;
+    el.classList.toggle('hidden', !show);
+    if (!show) return;
+    const votes = game.buyVotes || {};
+    const tallies = {};
+    for (const v of Object.values(votes)) {
+      tallies[v] = (tallies[v] || 0) + 1;
+    }
+    const parts = BUY_VOTE_OPTIONS.map((sec) => {
+      const n = tallies[sec] || 0;
+      return n ? `${formatMmClock(sec)}×${n}` : null;
+    }).filter(Boolean);
+    if ($('buy-vote-status')) {
+      const mine = myBuyVote ? `You voted ${formatMmClock(myBuyVote)}. ` : '';
+      $('buy-vote-status').textContent = mine + (parts.length ? parts.join(' · ') : 'Waiting for votes…');
+    }
+    $('buy-vote-opts')?.querySelectorAll('button').forEach((btn) => {
+      const sec = Number(btn.dataset.sec);
+      btn.classList.toggle('selected', myBuyVote === sec);
+    });
+  }
+
+  function wireBuyVote() {
+    $('buy-vote-opts')?.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-sec]');
+      if (!btn) return;
+      const sec = Number(btn.dataset.sec);
+      if (!BUY_VOTE_OPTIONS.includes(sec)) return;
+      myBuyVote = sec;
+      game.castBuyVote?.(sec);
+      SFX.ui();
+      renderBuyVote();
+      toast(`Voted for ${formatMmClock(sec)} buy phase`);
+    });
+  }
+
+
   // —— Menu ——
+  wireBuyVote();
+  gateAuthOrMenu();
+
+  if (net) {
+    net.on('presence', (list) => renderOnlinePanel(list));
+    net.on('connection', () => renderOnlinePanel(net.onlineOperators()));
+  }
+
   const robloxChk = $('chk-roblox-look');
   if (robloxChk) {
     robloxChk.checked = game.input?.lookMode === 'roblox';
@@ -1246,6 +1688,8 @@ export function createUI(game, inventory) {
     $('hud-team-b').textContent = game.score.sentinels;
     $('hud-phase').textContent = game.phaseLabel;
     $('hud-timer').textContent = formatTime(game.timer);
+    renderBuyVote();
+    if (game.phase !== 'buy') myBuyVote = null;
     $('hud-hp').textContent = Math.max(0, Math.ceil(p.hp));
     $('hud-armor').textContent = Math.max(0, Math.ceil(p.armor));
     $('hud-money').textContent = formatMoney(p.money);
@@ -1407,5 +1851,7 @@ export function createUI(game, inventory) {
     updateScoreboard,
     refreshMeta,
     offerAdPurchase,
+    renderBuyVote,
+    gateAuthOrMenu,
   };
 }
