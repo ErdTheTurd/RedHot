@@ -111,6 +111,11 @@ export function updateBot(bot, game, dt) {
       shootTarget.mesh.position.x - pos.x,
       shootTarget.mesh.position.z - pos.z
     );
+    const dx = shootTarget.mesh.position.x - pos.x;
+    const dy = shootTarget.mesh.position.y - pos.y;
+    const dz = shootTarget.mesh.position.z - pos.z;
+    const horiz = Math.hypot(dx, dz) || 0.001;
+    bot.pitch = Math.max(-0.45, Math.min(0.75, Math.atan2(dy, horiz)));
     let los = ((aimYaw - bot.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
     los = Math.abs(los);
     if (los < 0.35 && nearestDist < bot.vehicle.range) {
@@ -150,5 +155,6 @@ function botBuy(bot, game) {
     const pick = picks.find((p) => p.domain === want) || picks[0];
     bot.money -= pick.price;
     bot.equip(pick.id, 0);
+    game.placeDomainVehicle(bot);
   }
 }

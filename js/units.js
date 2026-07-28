@@ -270,6 +270,7 @@ export class Unit {
     this.vy = 0;
     this.grounded = true;
     this.jumpCooldown = 0;
+    this.respawnProtected = 0;
     this.vel.set(0, 0, 0);
     this.yaw = spawn.yaw;
     this.mesh.position.set(spawn.x, spawn.y, spawn.z);
