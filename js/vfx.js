@@ -230,18 +230,21 @@ export function spawnMuzzleFlash(scene, position, direction, heavy = false) {
     s.userData.vel = direction.clone()
       .add(new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.6, Math.random() - 0.5).multiplyScalar(2.2))
       .multiplyScalar(10 + Math.random() * 14);
-    s.userData.life = 0.18 + Math.random() * 0.2;
+    // Short-lived sparks — hard-capped well under the 5s shoot-VFX budget
+    s.userData.life = Math.min(5, 0.18 + Math.random() * 0.2);
+    s.userData.maxLife = s.userData.life;
     scene.add(s);
     sparks.push(s);
   }
 
-  return { sprite, disc, light, sparks };
+  return { sprite, disc, light, sparks, age: 0 };
 }
 
 export function spawnImpact(scene, position, heavy = false) {
   const group = new THREE.Group();
   group.position.copy(position);
   group.userData.life = heavy ? 0.7 : 0.5;
+  group.userData.maxLife = group.userData.life;
   group.userData.isImpact = true;
 
   const flash = new THREE.Sprite(
@@ -393,8 +396,8 @@ export function spawnExplosion(scene, position, scale = 1) {
 export function spawnSmokeCloud(scene, position) {
   const group = new THREE.Group();
   group.position.copy(position);
-  group.userData.life = 12;
-  group.userData.maxLife = 12;
+  group.userData.life = 5;
+  group.userData.maxLife = 5;
   group.userData.isSmokeField = true;
 
   for (let i = 0; i < 16; i++) {
@@ -559,39 +562,63 @@ export function orientProjectile(mesh, dir) {
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), look);
 }
 
+const SHOOT_VFX_MAX_AGE = 5;
+
+function disposeMuzzle(fx, scene) {
+  if (fx.sprite) scene.remove(fx.sprite);
+  if (fx.disc) scene.remove(fx.disc);
+  if (fx.light) scene.remove(fx.light);
+  for (const s of fx.sparks || []) scene.remove(s);
+  fx.sparks = [];
+}
+
 export function updateVfxList(list, dt, scene) {
   const keep = [];
   for (const fx of list) {
     if (fx.isMuzzle) {
-      fx.sprite.userData.life -= dt;
-      const t = fx.sprite.userData.life / fx.sprite.userData.maxLife;
-      fx.sprite.material.opacity = Math.max(0, t);
-      fx.sprite.scale.multiplyScalar(1 + dt * 10);
-      if (fx.disc) {
+      fx.age = (fx.age || 0) + dt;
+      if (fx.sprite?.parent) {
+        fx.sprite.userData.life -= dt;
+        const t = fx.sprite.userData.life / fx.sprite.userData.maxLife;
+        fx.sprite.material.opacity = Math.max(0, t);
+        fx.sprite.scale.multiplyScalar(1 + dt * 10);
+        if (fx.sprite.userData.life <= 0) scene.remove(fx.sprite);
+      }
+      if (fx.disc?.parent) {
         fx.disc.userData.life -= dt;
         fx.disc.material.opacity = Math.max(0, fx.disc.userData.life / fx.disc.userData.maxLife);
         fx.disc.scale.multiplyScalar(1 + dt * 12);
         if (fx.disc.userData.life <= 0) scene.remove(fx.disc);
       }
-      if (fx.light) {
+      if (fx.light?.parent) {
         fx.light.userData.life -= dt;
         fx.light.intensity *= Math.max(0, 1 - dt * 14);
         if (fx.light.userData.life <= 0) scene.remove(fx.light);
       }
-      for (const s of fx.sparks) {
+      for (const s of fx.sparks || []) {
         s.userData.life -= dt;
         s.position.addScaledVector(s.userData.vel, dt);
         s.userData.vel.y -= 22 * dt;
         if (s.userData.life <= 0) scene.remove(s);
       }
-      fx.sparks = fx.sparks.filter((s) => s.userData.life > 0);
-      if (fx.sprite.userData.life <= 0) {
-        scene.remove(fx.sprite);
-      } else keep.push(fx);
+      fx.sparks = (fx.sparks || []).filter((s) => s.userData.life > 0);
+      const lingering =
+        (fx.sprite?.parent && fx.sprite.userData.life > 0) ||
+        (fx.disc?.parent && fx.disc.userData.life > 0) ||
+        (fx.light?.parent && fx.light.userData.life > 0) ||
+        fx.sparks.length > 0;
+      if (!lingering || fx.age >= SHOOT_VFX_MAX_AGE) {
+        disposeMuzzle(fx, scene);
+      } else {
+        keep.push(fx);
+      }
       continue;
     }
 
     fx.userData.life -= dt;
+    fx.userData.age = (fx.userData.age || 0) + dt;
+    // Hard cap so combat debris never piles up forever
+    if (fx.userData.age >= SHOOT_VFX_MAX_AGE) fx.userData.life = Math.min(fx.userData.life, 0);
     const lifeT = fx.userData.maxLife ? fx.userData.life / fx.userData.maxLife : fx.userData.life;
 
     fx.children.forEach((ch) => {

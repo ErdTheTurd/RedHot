@@ -249,6 +249,9 @@ export class Game {
     }
     this.clearBomb();
     this.clearMines();
+    for (const p of this.projectiles) {
+      if (p.mesh) this.scene.remove(p.mesh);
+    }
     this.projectiles = [];
     // Clear lingering VFX from previous round
     for (const fx of this.effects) {
@@ -713,7 +716,8 @@ export class Game {
     const spreadMul = unit.accMods?.spreadMult || 1;
     const spread = (def.spread + unit.recoil) * spreadMul;
     const yaw = unit.yaw + (Math.random() - 0.5) * spread * 2;
-    const pitch = (unit.isPlayer ? -unit.pitch : 0) + (Math.random() - 0.5) * spread;
+    // Match look aim: positive pitch aims upward (do not invert for the player)
+    const pitch = (unit.pitch || 0) + (Math.random() - 0.5) * spread;
     const dir = new THREE.Vector3(
       Math.sin(yaw) * Math.cos(pitch),
       Math.sin(pitch),
@@ -730,12 +734,13 @@ export class Game {
 
     const dmgMul = 1 + (unit.matchMods?.damageBonus || 0);
     const penBonus = unit.matchMods?.armorPenBonus || 0;
+    const flightLife = Math.min(5, def.range / (heavy ? 75 : 110));
     this.projectiles.push({
       kind: 'gun',
       pos: origin,
       dir,
       speed: heavy ? 75 : 110,
-      life: def.range / (heavy ? 75 : 110),
+      life: flightLife,
       damage: def.damage * dmgMul,
       pen: def.armorPen + penBonus,
       owner: unit,
@@ -1128,6 +1133,25 @@ export class Game {
     SFX.ui();
   }
 
+  /** Larger hit volumes so tanks/ships/jets are reliably damageable. */
+  hitRadiusFor(unit, projectile = null) {
+    if (projectile?.radius) return projectile.radius;
+    const d = unit.vehicle?.domain;
+    if (d === 'sea') return 4.4;
+    if (d === 'air') return 3.4;
+    return 3.6;
+  }
+
+  unitHitByProjectile(unit, pos, radius) {
+    const up = unit.mesh.position;
+    const dx = up.x - pos.x;
+    const dy = up.y - pos.y;
+    const dz = up.z - pos.z;
+    const horiz = Math.hypot(dx, dz);
+    // Capsule-ish: generous horizontal radius, taller vertical window for tall hulls / jets
+    return horiz <= radius && Math.abs(dy) <= radius * 1.35;
+  }
+
   spawnExplosion(pos) {
     const boom = spawnExplosion(this.scene, pos.clone().add(new THREE.Vector3(0, 1.1, 0)), 1.15);
     this.effects.push(boom);
@@ -1214,10 +1238,10 @@ export class Game {
       }
       if (!hit) {
         for (const u of this.units) {
-          if (!u.alive || u === p.owner || u.team === p.owner.team) continue;
-          const dist = u.mesh.position.distanceTo(p.pos);
-          const radius = p.radius || (u.vehicle.domain === 'air' ? 2.4 : 2.0);
-          if (dist < radius) {
+          if (!u.alive || u === p.owner) continue;
+          if (this.mode?.teams && u.team === p.owner.team) continue;
+          const radius = this.hitRadiusFor(u, p);
+          if (this.unitHitByProjectile(u, p.pos, radius)) {
             if (p.kind === 'bomb' || p.kind === 'torpedo') {
               this.detonateOrdnance(p);
               hit = true;
@@ -1225,7 +1249,7 @@ export class Game {
             }
             const result = u.takeDamage(p.damage, p.owner, p.pen);
             if (result.lastStand && u.isPlayer) this.ui.toast('Reactive shield saved you!', 1800);
-            if (p.owner.isPlayer) SFX.hit();
+            if (p.owner.isPlayer && result.dmg > 0) SFX.hit();
             this.effects.push(spawnImpact(this.scene, p.pos.clone(), p.heavy));
             if (result.killed) {
               p.owner.kills += 1;
@@ -1390,8 +1414,9 @@ export class Game {
       }
     }
 
-    // cooldowns
+    // cooldowns + spawn protection decay (must tick or respawned units stay immortal)
     for (const u of this.units) {
+      u.respawnProtected = Math.max(0, (u.respawnProtected || 0) - dt);
       if (!u.alive) continue;
       u.fireCooldown = Math.max(0, u.fireCooldown - dt);
       u.recoil = Math.max(0, u.recoil - dt * 0.12);
