@@ -68,6 +68,17 @@ export function createUI(game, inventory) {
   }
 
   // —— Menu ——
+  const robloxChk = $('chk-roblox-look');
+  if (robloxChk) {
+    robloxChk.checked = game.input?.lookMode === 'roblox';
+    robloxChk.onchange = () => {
+      const mode = robloxChk.checked ? 'roblox' : 'default';
+      game.input?.setLookMode?.(mode);
+      SFX.ui();
+      toast(mode === 'roblox' ? 'Roblox look on — hold RMB to turn' : 'Classic mouse look on');
+    };
+  }
+
   $('btn-play').onclick = () => {
     SFX.ui();
     renderOps();
