@@ -1,5 +1,25 @@
 /** Keyboard / mouse + invisible slash-command capture */
 
+const LOOK_MODE_KEY = 'vehicle_strike_look_mode';
+
+export function getLookMode() {
+  try {
+    return localStorage.getItem(LOOK_MODE_KEY) === 'roblox' ? 'roblox' : 'default';
+  } catch {
+    return 'default';
+  }
+}
+
+export function setLookMode(mode) {
+  const next = mode === 'roblox' ? 'roblox' : 'default';
+  try {
+    localStorage.setItem(LOOK_MODE_KEY, next);
+  } catch {
+    /* ignore */
+  }
+  return next;
+}
+
 export function createInput() {
   const keys = Object.create(null);
   const mouse = { x: 0, y: 0, dx: 0, dy: 0, down: false, right: false };
@@ -7,6 +27,7 @@ export function createInput() {
   let cmdMode = false;
   let cmdBuffer = '';
   const cmdListeners = [];
+  let lookMode = getLookMode();
 
   /** Normalize browser key events → consistent codes (WASD + arrows). */
   function codeFromEvent(e) {
@@ -102,8 +123,8 @@ export function createInput() {
     if (e.button === 0) mouse.down = true;
     if (e.button === 2) {
       mouse.right = true;
-      // Roblox-style look: lock pointer while RMB is held for smooth turning
-      if (!cmdMode) {
+      // Optional Roblox look: grab pointer while RMB is held
+      if (lookMode === 'roblox' && !cmdMode) {
         const c = document.getElementById('game-canvas');
         if (c && !pointerLocked) c.requestPointerLock?.();
       }
@@ -115,8 +136,15 @@ export function createInput() {
   });
   window.addEventListener('mousemove', (e) => {
     if (cmdMode) return;
-    // Roblox-style: only accumulate look delta while right mouse is held
-    if (!mouse.right) return;
+    if (lookMode === 'roblox') {
+      // Optional Roblox-style: look only while holding right mouse
+      if (!mouse.right) return;
+      mouse.dx += e.movementX || 0;
+      mouse.dy += e.movementY || 0;
+      return;
+    }
+    // Default: classic always-on look while pointer-locked
+    if (!pointerLocked) return;
     mouse.dx += e.movementX || 0;
     mouse.dy += e.movementY || 0;
   });
@@ -132,9 +160,16 @@ export function createInput() {
     get pointerLocked() { return pointerLocked; },
     get cmdMode() { return cmdMode; },
     get cmdBuffer() { return cmdBuffer; },
+    get lookMode() { return lookMode; },
+    setLookMode(mode) {
+      lookMode = setLookMode(mode);
+      return lookMode;
+    },
     onCommand(fn) { cmdListeners.push(fn); },
     requestLock() {
       if (cmdMode) return;
+      // In Roblox mode, pointer lock is grabbed when RMB is held
+      if (lookMode === 'roblox') return;
       const c = document.getElementById('game-canvas');
       if (c && !pointerLocked) c.requestPointerLock?.();
     },
