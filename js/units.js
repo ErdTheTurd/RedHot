@@ -51,6 +51,7 @@ export class Unit {
     this.flashT = 0;
     this.respawnProtected = 0;
     this.lastAttacker = null;
+    this.sinkT = 0;
 
     const def = VEHICLES[this.loadout[0]];
     this.mesh = createVehicleMesh(

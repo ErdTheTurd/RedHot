@@ -79,6 +79,22 @@ export function createUI(game, inventory) {
     };
   }
 
+  const lowPolyChk = $('chk-low-poly');
+  if (lowPolyChk) {
+    lowPolyChk.checked = game.quality?.low || game.quality?.preset === 'low';
+    lowPolyChk.onchange = () => {
+      const preset = lowPolyChk.checked ? 'low' : 'high';
+      try {
+        localStorage.setItem('vehicle_strike_gfx', preset);
+      } catch { /* ignore */ }
+      const q = game.setGraphicsQuality?.(preset);
+      SFX.ui();
+      toast(q?.low
+        ? 'Low poly on — lighter map & effects'
+        : 'Ultra graphics on — rebuilt battlefield');
+    };
+  }
+
   $('btn-play').onclick = () => {
     SFX.ui();
     renderOps();

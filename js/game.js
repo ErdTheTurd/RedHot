@@ -14,19 +14,22 @@ import {
   spawnExplosion, spawnSmokeCloud, spawnEmpBurst, updateVfxList,
 } from './vfx.js';
 import { MODES } from './progression.js';
+import { resolveQuality } from './graphics.js';
 
 export class Game {
-  constructor({ scene, camera, input, ui, inventory, lighting = null }) {
+  constructor({ scene, camera, input, ui, inventory, lighting = null, quality = null, onQualityChange = null }) {
     this.scene = scene;
     this.camera = camera;
     this.input = input;
     this.ui = ui;
     this.inventory = inventory;
     this.lighting = lighting;
+    this.quality = quality || resolveQuality();
+    this.onQualityChange = onQualityChange;
     this.mapId = 'ironfront';
     this.modeId = 'strike';
     this.mode = MODES.strike;
-    this.map = createMap(scene, this.mapId);
+    this.map = createMap(scene, this.mapId, this.quality);
     this.applyMapTheme();
     this.units = [];
     this.player = null;
@@ -65,22 +68,29 @@ export class Game {
     const theme = this.map?.theme;
     if (!theme || !this.scene) return;
     this.scene.background = new THREE.Color(theme.bg);
-    this.scene.fog = new THREE.FogExp2(theme.fog, theme.fogDensity);
+    const fogMul = this.quality?.fogBoost || 1;
+    this.scene.fog = new THREE.FogExp2(theme.fog, theme.fogDensity * fogMul);
     if (this.lighting?.hemi) {
       this.lighting.hemi.color.set(theme.hemiSky);
       this.lighting.hemi.groundColor.set(theme.hemiGround);
     }
     if (this.lighting?.sun) {
       this.lighting.sun.color.set(theme.sun);
-      this.lighting.sun.intensity = theme.sunIntensity;
+      this.lighting.sun.intensity = theme.sunIntensity * (this.quality?.low ? 0.9 : 1);
     }
   }
 
   loadMap(mapId) {
     if (this.map?.group) this.scene.remove(this.map.group);
     this.mapId = mapId || 'ironfront';
-    this.map = createMap(this.scene, this.mapId);
+    this.map = createMap(this.scene, this.mapId, this.quality);
     this.applyMapTheme();
+  }
+
+  setGraphicsQuality(quality) {
+    this.quality = quality || resolveQuality();
+    if (!this.running) this.loadMap(this.mapId);
+    this.onQualityChange?.(this.quality);
   }
 
 
@@ -625,10 +635,7 @@ export class Game {
     const def = unit.vehicle;
     const water = this.map.isWater(next.x, next.z, def.domain);
 
-    // Land craft stay dry; ships stay in ocean/river only (no land shortcuts)
-    if (def.domain === 'land' && water) {
-      return;
-    }
+    // Ships stay in ocean/river only. Land craft MAY enter water — they sink.
     if (def.domain === 'sea' && !water) {
       return;
     }
@@ -647,6 +654,38 @@ export class Game {
     next.z = Math.max(-50, Math.min(45, next.z));
     unit.mesh.position.x = next.x;
     unit.mesh.position.z = next.z;
+  }
+
+  /** Land vehicles can drive into ocean/river but sink and take damage. */
+  updateWaterHazard(unit, dt) {
+    if (!unit?.alive || unit.vehicle.domain !== 'land') {
+      if (unit) unit.sinkT = 0;
+      return;
+    }
+    const wet = this.map.isWater(unit.mesh.position.x, unit.mesh.position.z, 'land');
+    if (!wet) {
+      unit.sinkT = 0;
+      return;
+    }
+    unit.sinkT = (unit.sinkT || 0) + dt;
+    const targetY = 0.05 - Math.min(2.4, unit.sinkT * 0.9);
+    unit.mesh.position.y += (targetY - unit.mesh.position.y) * Math.min(1, 4 * dt);
+    unit.grounded = false;
+    unit.vy = Math.min(unit.vy || 0, -0.5);
+    if (unit.isPlayer && unit.sinkT > 0.35) {
+      this.ui.toast('Sinking! Reach shore or a bridge', 700);
+    }
+    if (unit.sinkT > 1.15) {
+      const res = unit.takeDamage(32 * dt, null, 1);
+      if (res.killed) {
+        this.spawnExplosion(unit.mesh.position.clone());
+        this.ui.killFeed(unit, unit, 'SANK');
+        if (unit.isPlayer) this.ui.toast('You sank');
+        else this.ui.toast(`${unit.name} sank`);
+        this.checkElimination();
+        this.checkModeObjectives?.();
+      }
+    }
   }
 
   tryFire(unit) {
@@ -928,7 +967,8 @@ export class Game {
     this.camPitch = 0.4 + p.pitch * 0.35;
     p.mesh.rotation.y = p.yaw;
 
-    const speed = p.vehicle.speed * (p.accMods?.speedMult || 1);
+    const speedMul = (p.sinkT > 0) ? 0.38 : 1;
+    const speed = p.vehicle.speed * (p.accMods?.speedMult || 1) * speedMul;
     const forward = new THREE.Vector3(Math.sin(p.yaw), 0, Math.cos(p.yaw));
     // Right-handed strafe relative to facing (A = left, D = right on screen)
     const right = new THREE.Vector3(-Math.cos(p.yaw), 0, Math.sin(p.yaw));
@@ -958,14 +998,18 @@ export class Game {
       p.stillT = (p.stillT || 0) + dt;
     }
 
-    // Jump (Space) — costs ammo (Jump Boosters reduce cost)
+    // Jump (Space) — costs ammo (Jump Boosters reduce cost); blocked while sinking
     if (this.input.consumePress('Space')) {
-      const res = p.tryJump();
-      if (res.ok) this.ui.toast(`Jump −${res.cost || 5} ammo`);
-      else if (res.reason) this.ui.toast(res.reason, 900);
+      if ((p.sinkT || 0) > 0) this.ui.toast('Cannot jump while sinking', 900);
+      else {
+        const res = p.tryJump();
+        if (res.ok) this.ui.toast(`Jump −${res.cost || 5} ammo`);
+        else if (res.reason) this.ui.toast(res.reason, 900);
+      }
     }
     p.updateJump(dt);
-    if (p.grounded) p._adjustHeight();
+    if (p.grounded && !(p.sinkT > 0)) p._adjustHeight();
+    this.updateWaterHazard(p, dt);
 
     p.secondaryCooldown = Math.max(0, (p.secondaryCooldown || 0) - dt);
 

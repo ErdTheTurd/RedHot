@@ -145,30 +145,61 @@ export function makeWaterTexture() {
   const c = document.createElement('canvas');
   c.width = c.height = size;
   const ctx = c.getContext('2d');
+  // Deep multi-band ocean
   const g = ctx.createLinearGradient(0, 0, size, size);
-  g.addColorStop(0, '#062438');
-  g.addColorStop(0.35, '#0a3a55');
-  g.addColorStop(0.7, '#0e4a66');
-  g.addColorStop(1, '#083040');
+  g.addColorStop(0, '#031820');
+  g.addColorStop(0.25, '#0a3550');
+  g.addColorStop(0.55, '#0c4a6a');
+  g.addColorStop(0.8, '#0a3a58');
+  g.addColorStop(1, '#052838');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, size, size);
-  for (let i = 0; i < 120; i++) {
-    ctx.globalAlpha = 0.08 + Math.random() * 0.12;
-    ctx.strokeStyle = i % 2 ? '#8ed4ef' : '#1a6a88';
-    ctx.lineWidth = 1 + Math.random() * 2;
-    ctx.beginPath();
+
+  // Caustic-like blotches
+  for (let i = 0; i < 90; i++) {
+    const x = Math.random() * size;
     const y = Math.random() * size;
-    ctx.moveTo(0, y);
-    for (let x = 0; x < size; x += 16) {
-      ctx.lineTo(x, y + Math.sin(x * 0.04 + i) * (4 + Math.random() * 5));
+    const r = 12 + Math.random() * 40;
+    const cg = ctx.createRadialGradient(x, y, 0, x, y, r);
+    cg.addColorStop(0, 'rgba(120, 220, 255, 0.16)');
+    cg.addColorStop(0.5, 'rgba(40, 140, 180, 0.06)');
+    cg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = cg;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Wave crests
+  for (let i = 0; i < 160; i++) {
+    ctx.globalAlpha = 0.06 + Math.random() * 0.14;
+    ctx.strokeStyle = i % 3 === 0 ? '#c8f0ff' : i % 3 === 1 ? '#2a7a98' : '#0e5068';
+    ctx.lineWidth = 1 + Math.random() * 2.5;
+    ctx.beginPath();
+    const y0 = Math.random() * size;
+    ctx.moveTo(0, y0);
+    for (let x = 0; x < size; x += 12) {
+      ctx.lineTo(
+        x,
+        y0
+          + Math.sin(x * 0.035 + i) * (5 + Math.random() * 6)
+          + Math.sin(x * 0.01 + i * 0.4) * 3
+      );
     }
     ctx.stroke();
   }
   ctx.globalAlpha = 1;
+
+  // Specular glitter
+  for (let i = 0; i < 220; i++) {
+    ctx.fillStyle = `rgba(220,245,255,${0.05 + Math.random() * 0.18})`;
+    ctx.fillRect(Math.random() * size, Math.random() * size, 1 + Math.random() * 2, 1);
+  }
+
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(10, 10);
-  tex.anisotropy = 4;
+  tex.repeat.set(14, 14);
+  tex.anisotropy = 8;
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
