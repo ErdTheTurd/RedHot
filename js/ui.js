@@ -1101,16 +1101,16 @@ export function createUI(game, inventory) {
         hint.textContent = `CMD ${game.input.cmdBuffer || '/'}  ·  Enter run · Esc cancel`;
         hint.style.color = '#ffe08a';
       } else if (game.mode?.freeRoam) {
-        hint.textContent = 'Vigilante · F Gun · Shift+W/S aim · B Bombs · X Mine · C Arsenal · Esc Extract';
+        hint.textContent = 'Vigilante · F Gun · Shift+↑/↓ aim · Shift+W/S jet alt · B Bombs · X Mine · C Arsenal · Esc Extract';
         hint.style.color = '';
       } else if (v.domain === 'air') {
-        hint.textContent = 'F Gun · Shift+W/S aim · B Bombs · R Reload · Space Jump · 1–3 Slots';
+        hint.textContent = 'F Gun · Shift+↑/↓ aim · Shift+W/S altitude · B Bombs · R Reload · 1–3 Slots';
         hint.style.color = '';
       } else if (v.domain === 'sea') {
-        hint.textContent = 'F Gun · Shift+W/S aim · T Torpedo · X Mine · R Reload · Space Jump';
+        hint.textContent = 'F Gun · Shift+↑/↓ aim · T Torpedo · X Mine · R Reload · Space Jump';
         hint.style.color = '';
       } else {
-        hint.textContent = 'WASD/←→ · Mouse look · Shift+W/S aim · F Gun · B Buy · X Mine · R Reload';
+        hint.textContent = 'WASD/←→ · Mouse look · Shift+↑/↓ aim · F Gun · B Buy · X Mine · R Reload';
         hint.style.color = '';
       }
       if (game.input?.lookMode === 'roblox' && !game.input?.cmdMode) {

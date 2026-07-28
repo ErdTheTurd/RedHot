@@ -51,6 +51,11 @@ export class Unit {
     this.flashT = 0;
     this.respawnProtected = 0;
     this.lastAttacker = null;
+    this.flightAlt = 8;
+    this.dying = false;
+    this.deathT = 0;
+    this.deathSpin = 0;
+    this.deathFire = null;
     this.sinkT = 0;
 
     const def = VEHICLES[this.loadout[0]];
@@ -162,8 +167,10 @@ export class Unit {
     const d = this.vehicle.domain;
     const x = this.mesh.position.x;
     const z = this.mesh.position.z;
+    if (this.dying) return;
     if (d === 'air') {
-      this.mesh.position.y = 8 + Math.sin(performance.now() * 0.002) * 0.2 + Math.max(0, this.vy * 0.05);
+      const alt = this.flightAlt ?? 8;
+      this.mesh.position.y = alt + Math.sin(performance.now() * 0.002) * 0.15;
       this.grounded = true;
     } else if (d === 'sea') {
       const onLand = this.getGroundY(x, z) > 0.45;
@@ -186,6 +193,7 @@ export class Unit {
   /** Apply gravity / jump arc. Returns true if currently airborne. */
   updateJump(dt) {
     this.jumpCooldown = Math.max(0, this.jumpCooldown - dt);
+    if (this.dying) return true;
     const d = this.vehicle.domain;
     if (d === 'air') {
       this.vy = 0;
@@ -239,6 +247,12 @@ export class Unit {
     this.hp = 100;
     this.lastStandUsed = false;
     this.stillT = 0;
+    this.dying = false;
+    this.deathT = 0;
+    this.deathSpin = 0;
+    this.clearDeathFire();
+    this.flightAlt = 8;
+    this.sinkT = 0;
     for (const id of this.loadout) {
       if (!id) continue;
       const d = VEHICLES[id];
@@ -259,7 +273,7 @@ export class Unit {
     this.vel.set(0, 0, 0);
     this.yaw = spawn.yaw;
     this.mesh.position.set(spawn.x, spawn.y, spawn.z);
-    this.mesh.rotation.y = this.yaw;
+    this.mesh.rotation.set(0, this.yaw, 0);
     this.mesh.visible = true;
     this._swapMesh();
     this._refillOrdnance();
@@ -269,8 +283,22 @@ export class Unit {
     this._adjustHeight();
   }
 
+  clearDeathFire() {
+    if (this.deathFire) {
+      this.mesh.remove(this.deathFire);
+      this.deathFire.traverse?.((o) => {
+        o.geometry?.dispose?.();
+        if (o.material) {
+          if (Array.isArray(o.material)) o.material.forEach((m) => m.dispose?.());
+          else o.material.dispose?.();
+        }
+      });
+      this.deathFire = null;
+    }
+  }
+
   takeDamage(amount, attacker, armorPen = 0.7) {
-    if (!this.alive || this.respawnProtected > 0) return { killed: false, dmg: 0 };
+    if (!this.alive || this.dying || this.respawnProtected > 0) return { killed: false, dmg: 0 };
     this.lastAttacker = attacker;
     let dmg = amount;
     if (this.armor > 0) {
@@ -288,7 +316,8 @@ export class Unit {
       this.hp = 0;
       this.alive = false;
       this.deaths += 1;
-      this.mesh.visible = false;
+      // Stay visible — fiery fall handled by Game.beginDeathFall
+      this.mesh.visible = true;
       return { killed: true, dmg };
     }
     return { killed: false, dmg };

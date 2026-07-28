@@ -12,6 +12,7 @@ import {
   createProjectileMesh, createBombMesh, createTorpedoMesh, createLandmineMesh,
   orientProjectile, spawnMuzzleFlash, spawnImpact,
   spawnExplosion, spawnSmokeCloud, spawnEmpBurst, updateVfxList,
+  attachDeathFire, updateDeathFire,
 } from './vfx.js';
 import { MODES } from './progression.js';
 import { resolveQuality } from './graphics.js';
@@ -463,7 +464,7 @@ export class Game {
         if (p.owner.isPlayer) this.waveKills += 1;
         p.owner.money = Math.min(MAX_MONEY, p.owner.money + KILL_REWARD);
         SFX.kill();
-        this.spawnExplosion(u.mesh.position.clone());
+        this.beginDeathFall(u);
         this.ui.killFeed(p.owner, u, p.kind === 'torpedo' ? 'TORPEDO' : 'BOMB');
         this.ui.toast(p.owner.isPlayer ? `Destroyed ${u.name}` : `${p.owner.name} wrecked ${u.name}`);
         this.checkElimination();
@@ -678,7 +679,7 @@ export class Game {
     if (unit.sinkT > 1.15) {
       const res = unit.takeDamage(32 * dt, null, 1);
       if (res.killed) {
-        this.spawnExplosion(unit.mesh.position.clone());
+        this.beginDeathFall(unit);
         this.ui.killFeed(unit, unit, 'SANK');
         if (unit.isPlayer) this.ui.toast('You sank');
         else this.ui.toast(`${unit.name} sank`);
@@ -935,6 +936,7 @@ export class Game {
           this.waveKills += mine.owner.isPlayer ? 1 : 0;
           mine.owner.money = Math.min(MAX_MONEY, mine.owner.money + KILL_REWARD);
         }
+        this.beginDeathFall(u);
         this.ui.killFeed(mine.owner || u, u, 'LANDMINE');
         this.checkElimination();
         this.checkModeObjectives();
@@ -954,12 +956,23 @@ export class Game {
     p.yaw -= dx * sens;
     p.pitch -= dy * sens;
 
-    // Hold Shift + W/S or ↑/↓ to aim the gun vertically (does not move)
-    const shiftAim = this.input.pressedAny('ShiftLeft', 'ShiftRight');
-    if (shiftAim) {
+    const shift = this.input.pressedAny('ShiftLeft', 'ShiftRight');
+    const isAir = p.vehicle.domain === 'air';
+
+    // Gun aim: Shift + arrow ↑/↓ only (not W/S)
+    if (shift) {
       const aimSpeed = 1.55;
-      if (this.input.pressedAny('KeyW', 'ArrowUp')) p.pitch += aimSpeed * dt;
-      if (this.input.pressedAny('KeyS', 'ArrowDown')) p.pitch -= aimSpeed * dt;
+      if (this.input.pressed('ArrowUp')) p.pitch += aimSpeed * dt;
+      if (this.input.pressed('ArrowDown')) p.pitch -= aimSpeed * dt;
+    }
+
+    // Jet altitude: Shift + W/S
+    if (shift && isAir) {
+      const climb = 14;
+      if (!p.flightAlt) p.flightAlt = 8;
+      if (this.input.pressed('KeyW')) p.flightAlt += climb * dt;
+      if (this.input.pressed('KeyS')) p.flightAlt -= climb * dt;
+      p.flightAlt = Math.max(3.5, Math.min(28, p.flightAlt));
     }
 
     p.pitch = Math.max(-0.5, Math.min(0.85, p.pitch));
@@ -973,23 +986,19 @@ export class Game {
     // Right-handed strafe relative to facing (A = left, D = right on screen)
     const right = new THREE.Vector3(-Math.cos(p.yaw), 0, Math.sin(p.yaw));
     const move = new THREE.Vector3();
-    const axis = this.input.moveAxis ? this.input.moveAxis() : null;
-    if (axis) {
-      // While shift-aiming, W/S / ↑↓ adjust pitch only — still allow A/D strafe
-      if (!shiftAim) {
-        if (axis.z > 0) move.add(forward);
-        if (axis.z < 0) move.sub(forward);
-      }
-      if (axis.x < 0) move.add(right); // A / Left
-      if (axis.x > 0) move.sub(right); // D / Right
-    } else {
-      if (!shiftAim) {
-        if (this.input.pressedAny('KeyW', 'ArrowUp')) move.add(forward);
-        if (this.input.pressedAny('KeyS', 'ArrowDown')) move.sub(forward);
-      }
-      if (this.input.pressedAny('KeyA', 'ArrowLeft')) move.add(right);
-      if (this.input.pressedAny('KeyD', 'ArrowRight')) move.sub(right);
-    }
+
+    // W/S: move unless Shift+jet (altitude). Arrows ↑↓: move unless Shift (aim).
+    const useW = this.input.pressed('KeyW');
+    const useS = this.input.pressed('KeyS');
+    const useUp = this.input.pressed('ArrowUp');
+    const useDown = this.input.pressed('ArrowDown');
+    if ((!shift || !isAir) && useW) move.add(forward);
+    if ((!shift || !isAir) && useS) move.sub(forward);
+    if (!shift && useUp) move.add(forward);
+    if (!shift && useDown) move.sub(forward);
+    if (this.input.pressedAny('KeyA', 'ArrowLeft')) move.add(right);
+    if (this.input.pressedAny('KeyD', 'ArrowRight')) move.sub(right);
+
     if (move.lengthSq() > 0) {
       p.stillT = 0;
       move.normalize().multiplyScalar(speed * dt);
@@ -1124,6 +1133,52 @@ export class Game {
     this.effects.push(boom);
   }
 
+  /** Initial blast, then fiery tumbling wreck until ground impact. */
+  beginDeathFall(u) {
+    if (!u?.mesh || u.dying) return;
+    u.dying = true;
+    u.deathT = 0;
+    u.deathSpin = (Math.random() - 0.5) * 10;
+    const isAir = u.vehicle.domain === 'air';
+    u.vy = isAir ? 1.5 + Math.random() * 2.5 : 5 + Math.random() * 5;
+    const fwd = new THREE.Vector3(Math.sin(u.yaw || 0), 0, Math.cos(u.yaw || 0));
+    u.vel.copy(fwd).multiplyScalar(isAir ? 8 + Math.random() * 6 : 2 + Math.random() * 3);
+    u.vel.x += (Math.random() - 0.5) * 3;
+    u.vel.z += (Math.random() - 0.5) * 3;
+    this.spawnExplosion(u.mesh.position.clone());
+    u.clearDeathFire();
+    u.deathFire = attachDeathFire(u.mesh);
+    u.mesh.visible = true;
+  }
+
+  updateDeathFalls(dt) {
+    const t = performance.now() * 0.001;
+    for (const u of this.units) {
+      if (!u.dying || !u.mesh) continue;
+      u.deathT += dt;
+      const isAir = u.vehicle.domain === 'air';
+      u.vy -= (isAir ? 14 : 22) * dt;
+      u.mesh.position.x += u.vel.x * dt;
+      u.mesh.position.z += u.vel.z * dt;
+      u.mesh.position.y += u.vy * dt;
+      u.mesh.rotation.x += u.deathSpin * dt;
+      u.mesh.rotation.z += u.deathSpin * 0.65 * dt;
+      u.mesh.rotation.y += dt * (1.2 + Math.abs(u.deathSpin) * 0.15);
+      if (u.deathFire) updateDeathFire(u.deathFire, dt, t);
+
+      const floorY = this.map.groundHeight(u.mesh.position.x, u.mesh.position.z) + 0.25;
+      if (u.mesh.position.y <= floorY || u.deathT > 3.8) {
+        u.mesh.position.y = Math.max(u.mesh.position.y, floorY);
+        this.spawnExplosion(u.mesh.position.clone());
+        u.clearDeathFire();
+        u.dying = false;
+        u.mesh.visible = false;
+        u.vy = 0;
+        u.vel.set(0, 0, 0);
+      }
+    }
+  }
+
   updateProjectiles(dt) {
     const remain = [];
     for (const p of this.projectiles) {
@@ -1178,7 +1233,7 @@ export class Game {
               this.waveKills += p.owner.isPlayer ? 1 : 0;
               p.owner.money = Math.min(MAX_MONEY, p.owner.money + KILL_REWARD);
               SFX.kill();
-              this.spawnExplosion(u.mesh.position.clone());
+              this.beginDeathFall(u);
               this.ui.killFeed(p.owner, u, p.owner.vehicle.name);
               this.ui.toast(p.owner.isPlayer ? `Destroyed ${u.name}` : `${p.owner.name} wrecked ${u.name}`);
               this.checkElimination();
@@ -1258,7 +1313,7 @@ export class Game {
     const spawnsR = getSpawns('raiders');
     const spawnsS = getSpawns('sentinels');
     for (const u of this.units) {
-      if (u.alive || !u._respawnAt || now < u._respawnAt) continue;
+      if (u.alive || u.dying || !u._respawnAt || now < u._respawnAt) continue;
       u._respawnAt = 0;
       const spawn = u.team === TEAMS.RAIDERS
         ? spawnsR[Math.floor(Math.random() * spawnsR.length)]
@@ -1273,7 +1328,7 @@ export class Game {
   updateCamera() {
     const p = this.player;
     if (!p) return;
-    const target = p.alive ? p.mesh.position : new THREE.Vector3(0, 0, 0);
+    const target = (p.alive || p.dying) ? p.mesh.position : new THREE.Vector3(0, 0, 0);
     const dist = this.camDist;
     const height = this.camHeight + (p.vehicle?.domain === 'air' ? 4 : 0);
     const yaw = this.camYaw;
@@ -1356,6 +1411,7 @@ export class Game {
     }
     this.updateMines(dt);
     this.updateProjectiles(dt);
+    this.updateDeathFalls(dt);
     this.processRespawns();
     this.effects = updateVfxList(this.effects, dt, this.scene);
 
