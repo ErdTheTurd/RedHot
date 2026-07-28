@@ -488,6 +488,11 @@ export class InventoryService {
     this.persist();
   }
 
+  setCallsign(name) {
+    this.data.profile.callsign = String(name || '').slice(0, 16);
+    this.persist();
+  }
+
   // —— Rewarded ads ——
   getAdsState() {
     this.data.ads = normalizeAdsState(this.data.ads);

@@ -13,6 +13,8 @@ export const PHASE = {
 };
 
 export const BUY_TIME = 15;
+export const BUY_TIME_MAX = 120;
+export const BUY_VOTE_OPTIONS = [30, 60, 90, 120];
 export const ROUND_TIME = 115;
 export const BOMB_TIME = 40;
 export const DEFUSE_TIME = 5;
