@@ -1,4 +1,9 @@
-# Deploy Vehicle Strike to GitHub Pages from the repo root on every push to main.
+# GitHub Pages for this repo is set to "Deploy from a branch" (main /).
+# The built-in "pages build and deployment" already publishes on every push.
+#
+# A second Actions deploy-pages job races that pipeline and shows scary
+# cancelled/failed runs ("higher priority waiting request for pages exists").
+# This workflow only verifies the site tree and documents the branch deploy.
 name: Deploy GitHub Pages
 
 on:
@@ -8,24 +13,20 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: pages-status
+  cancel-in-progress: false
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: .
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Confirm Pages entrypoints
+        run: |
+          test -f index.html
+          test -f js/main.js
+          test -f css/main.css
+          echo "OK — GitHub Pages publishes from branch main (Settings → Pages → Deploy from a branch)."
+          echo "Skip actions/deploy-pages to avoid racing the built-in Pages builder."
