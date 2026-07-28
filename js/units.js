@@ -78,6 +78,54 @@ export class Unit {
     const torpCap = (d.torpedoes || 0) + (this.accMods?.torpedoCap || 0);
     this.bombs = bombCap;
     this.torpedoes = torpCap;
+    this._seedOrdnanceStore(d.id, bombCap, torpCap);
+  }
+
+  _seedOrdnanceStore(vid, bombs, torpedoes) {
+    if (!this._ordnanceByVehicle) this._ordnanceByVehicle = {};
+    const id = vid || this.vehicle?.id;
+    if (!id) return;
+    this._ordnanceByVehicle[id] = {
+      bombs: bombs ?? this.bombs ?? 0,
+      torpedoes: torpedoes ?? this.torpedoes ?? 0,
+    };
+  }
+
+  _stashOrdnance() {
+    const id = this.vehicle?.id;
+    if (!id) return;
+    if (!this._ordnanceByVehicle) this._ordnanceByVehicle = {};
+    this._ordnanceByVehicle[id] = {
+      bombs: this.bombs || 0,
+      torpedoes: this.torpedoes || 0,
+    };
+  }
+
+  _restoreOrdnance() {
+    const d = this.vehicle;
+    const id = d?.id;
+    if (!id) return;
+    if (!this._ordnanceByVehicle) this._ordnanceByVehicle = {};
+    const bombCap = (d.bombs || 0) + (this.accMods?.bombCap || 0);
+    const torpCap = (d.torpedoes || 0) + (this.accMods?.torpedoCap || 0);
+    if (!this._ordnanceByVehicle[id]) {
+      this._ordnanceByVehicle[id] = { bombs: bombCap, torpedoes: torpCap };
+    }
+    const stored = this._ordnanceByVehicle[id];
+    // Never grant more than what this hull still has left
+    this.bombs = Math.max(0, Math.min(bombCap, stored.bombs));
+    this.torpedoes = Math.max(0, Math.min(torpCap, stored.torpedoes));
+    stored.bombs = this.bombs;
+    stored.torpedoes = this.torpedoes;
+  }
+
+  /** Caps for the current vehicle (accessories included). */
+  _ordnanceCaps() {
+    const d = this.vehicle;
+    return {
+      bombs: (d.bombs || 0) + (this.accMods?.bombCap || 0),
+      torpedoes: (d.torpedoes || 0) + (this.accMods?.torpedoCap || 0),
+    };
   }
 
   get vehicle() {
@@ -119,6 +167,7 @@ export class Unit {
     }
     this.bombs = (this.bombs || 0) + (mods.bombs || 0);
     this.torpedoes = (this.torpedoes || 0) + (mods.torpedoes || 0);
+    this._stashOrdnance();
   }
 
   _ensureAmmo(vid) {
@@ -130,19 +179,52 @@ export class Unit {
   }
 
   equip(vehicleId, slot = 0) {
+    this._stashOrdnance();
     this.loadout[slot] = vehicleId;
     this._ensureAmmo(vehicleId);
     this.activeSlot = slot;
     this._swapMesh();
+    // Fresh equip / buy gets a full magazine of ordnance for that hull
     this._refillOrdnance();
   }
 
+  /**
+   * In-match slot swap. Does NOT refill bombs/torpedoes/mines (that was an exploit).
+   * Returns { ok, niceTry } when a rapid switch-refill attempt is detected.
+   */
   switchSlot(slot) {
-    if (!this.loadout[slot]) return;
+    if (!this.loadout[slot]) return { ok: false };
+    if (slot === this.activeSlot) return { ok: false, same: true };
+
+    const minesBefore = this.landmines || 0;
+    const caps = this._ordnanceCaps();
+    const depleted =
+      (caps.bombs > 0 && (this.bombs || 0) < caps.bombs) ||
+      (caps.torpedoes > 0 && (this.torpedoes || 0) < caps.torpedoes);
+
+    const now = performance.now();
+    const since = now - (this._lastSlotSwitchAt || 0);
+    this._lastSlotSwitchAt = now;
+    if (since < 900) this._slotSwitchBurst = (this._slotSwitchBurst || 0) + 1;
+    else this._slotSwitchBurst = 1;
+
+    // Old bug: _refillOrdnance on every switch. Rapid cycling after spending = exploit tell.
+    const recentSpend = this._recentOrdnanceSpend && (now - this._recentOrdnanceSpend < 4000);
+    const niceTry = !!(
+      this.isPlayer &&
+      this._slotSwitchBurst >= 2 &&
+      (depleted || recentSpend)
+    );
+
+    this._stashOrdnance();
     this.activeSlot = slot;
     this.reloadT = 0;
     this._swapMesh();
-    this._refillOrdnance();
+    this._restoreOrdnance();
+    // Mines are match-global — never bump on switch
+    this.landmines = minesBefore;
+
+    return { ok: true, niceTry };
   }
 
   _swapMesh() {
@@ -253,6 +335,9 @@ export class Unit {
     this.clearDeathFire();
     this.flightAlt = 8;
     this.sinkT = 0;
+    this._ordnanceByVehicle = {};
+    this._slotSwitchBurst = 0;
+    this._lastSlotSwitchAt = 0;
     for (const id of this.loadout) {
       if (!id) continue;
       const d = VEHICLES[id];

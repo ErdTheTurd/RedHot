@@ -1364,6 +1364,36 @@ tr.you { background: rgba(255,255,255,0.05); }
   transition: opacity 0.15s;
 }
 
+.nice-try {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  font-family: "Stardos Stencil", "Barlow Condensed", Impact, sans-serif;
+  font-weight: 700;
+  font-size: clamp(3.5rem, 16vw, 9rem);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #f2e6c8;
+  text-shadow:
+    0 0 2px #1a1208,
+    3px 3px 0 #3a2010,
+    0 0 28px rgba(240, 192, 64, 0.45),
+    0 0 60px rgba(232, 93, 4, 0.35);
+  background: radial-gradient(circle at center, rgba(12, 8, 4, 0.55) 0%, rgba(8, 6, 4, 0.15) 55%, transparent 72%);
+  animation: nice-try-slam 0.35s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+
+.nice-try.hidden { display: none !important; }
+
+@keyframes nice-try-slam {
+  from { opacity: 0; transform: scale(1.35) rotate(-2deg); }
+  to { opacity: 1; transform: scale(1) rotate(0deg); }
+}
+
 .panel-card.wide { width: min(720px, 94vw); }
 
 .hud-weapon em {

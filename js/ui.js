@@ -1224,6 +1224,20 @@ export function createUI(game, inventory) {
     showBanner._t = setTimeout(() => el.classList.add('hidden'), 2400);
   }
 
+  function showNiceTry(ms = 3000) {
+    const el = $('nice-try');
+    if (!el) return;
+    el.classList.remove('hidden');
+    // Retrigger slam animation
+    el.style.animation = 'none';
+    // eslint-disable-next-line no-unused-expressions
+    el.offsetHeight;
+    el.style.animation = '';
+    clearTimeout(showNiceTry._t);
+    showNiceTry._t = setTimeout(() => el.classList.add('hidden'), ms);
+    SFX.ui?.();
+  }
+
   function updateHud() {
     const p = game.player;
     if (!p) return;
@@ -1388,6 +1402,7 @@ export function createUI(game, inventory) {
     toast,
     killFeed,
     showBanner,
+    showNiceTry,
     updateHud,
     updateScoreboard,
     refreshMeta,

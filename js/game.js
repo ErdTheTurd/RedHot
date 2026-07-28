@@ -788,6 +788,8 @@ export class Game {
     }
     if (unit.secondaryCooldown > 0) return;
     unit.bombs -= 1;
+    unit._recentOrdnanceSpend = performance.now();
+    unit._stashOrdnance?.();
     unit.secondaryCooldown = 0.55;
     const origin = unit.mesh.position.clone();
     origin.y -= 0.8;
@@ -824,6 +826,8 @@ export class Game {
     }
     if (unit.secondaryCooldown > 0) return;
     unit.torpedoes -= 1;
+    unit._recentOrdnanceSpend = performance.now();
+    unit._stashOrdnance?.();
     unit.secondaryCooldown = 0.85;
     const dir = new THREE.Vector3(Math.sin(unit.yaw), 0, Math.cos(unit.yaw)).normalize();
     const origin = unit.mesh.position.clone().addScaledVector(dir, 3.5);
@@ -890,6 +894,7 @@ export class Game {
       }
     }
     unit.landmines -= 1;
+    unit._recentOrdnanceSpend = performance.now();
     const mesh = createLandmineMesh();
     const ground = this.map.groundHeight(pos.x, pos.z);
     mesh.position.set(pos.x, ground + 0.06, pos.z);
@@ -1496,17 +1501,23 @@ export class Game {
     }
     if (e.code === 'Digit1') {
       if (this.player?.loadout[0] && (!this.inventory || this.inventory.ownsVehicle(this.player.loadout[0]))) {
-        this.player.switchSlot(0); this.placeDomainVehicle(this.player);
+        const res = this.player.switchSlot(0);
+        this.placeDomainVehicle(this.player);
+        if (res?.niceTry) this.ui.showNiceTry?.();
       }
     }
     if (e.code === 'Digit2') {
       if (this.player?.loadout[1] && (!this.inventory || this.inventory.ownsVehicle(this.player.loadout[1]))) {
-        this.player.switchSlot(1); this.placeDomainVehicle(this.player);
+        const res = this.player.switchSlot(1);
+        this.placeDomainVehicle(this.player);
+        if (res?.niceTry) this.ui.showNiceTry?.();
       }
     }
     if (e.code === 'Digit3') {
       if (this.player?.loadout[2] && (!this.inventory || this.inventory.ownsVehicle(this.player.loadout[2]))) {
-        this.player.switchSlot(2); this.placeDomainVehicle(this.player);
+        const res = this.player.switchSlot(2);
+        this.placeDomainVehicle(this.player);
+        if (res?.niceTry) this.ui.showNiceTry?.();
       }
     }
     if (e.code === 'Escape' && this.buyOpen) this.closeBuyMenu();
