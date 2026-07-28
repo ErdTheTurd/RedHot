@@ -1,5 +1,5 @@
 import {
-  CATEGORIES, VEHICLES, GEAR, formatMoney, formatTime, TEAMS,
+  CATEGORIES, VEHICLES, GEAR, formatMoney, formatTime, TEAMS, BOT_NAMES,
 } from './config.js';
 import { CASES, KEYS, SKINS, RARITY, rarityColor, shopSkinCatalog } from './skins.js';
 import { GEAR_ITEMS, gearItemImageDataUrl } from './gearItems.js';
@@ -48,6 +48,161 @@ export function createUI(game, inventory) {
   let opsMap = inventory.profile?.selectedMap || 'ironfront';
   let opsMode = inventory.profile?.selectedMode || 'strike';
   let pendingAdOffer = null;
+
+  const TEAM_SIZE = 4;
+  const MM_WAIT_SEC = 60;
+  const FAKE_JOIN_NAMES = {
+    raiders: ['Ashwake', 'RedKeel', 'DustFang', 'IronHowl', 'Cinder', 'EmberFox', 'RustPike'],
+    sentinels: ['BlueDock', 'Tidewall', 'FrostBit', 'Harbor', 'Vigil', 'NorthLock', 'Seaglass'],
+  };
+  let mmTimer = null;
+  let mmSecondsLeft = MM_WAIT_SEC;
+  let mmTeam = TEAMS.RAIDERS;
+  let mmRoster = { raiders: [], sentinels: [] };
+
+  function emptySlot() {
+    return { name: 'Open seat', kind: 'empty' };
+  }
+
+  function blankRoster(playerTeam) {
+    const youName = inventory.profile?.callsign || 'You';
+    const raiders = Array.from({ length: TEAM_SIZE }, emptySlot);
+    const sentinels = Array.from({ length: TEAM_SIZE }, emptySlot);
+    if (playerTeam === TEAMS.RAIDERS) {
+      raiders[0] = { name: youName, kind: 'you' };
+    } else {
+      sentinels[0] = { name: youName, kind: 'you' };
+    }
+    return { raiders, sentinels };
+  }
+
+  function renderMmSlots() {
+    const paint = (listId, slots, team) => {
+      const ul = $(listId);
+      if (!ul) return;
+      ul.innerHTML = '';
+      slots.forEach((slot, i) => {
+        const li = document.createElement('li');
+        const filled = slot.kind !== 'empty';
+        if (filled) li.classList.add('filled');
+        if (slot.kind === 'you') li.classList.add('you');
+        const kindLabel = slot.kind === 'you' ? 'YOU'
+          : slot.kind === 'human' ? 'PLAYER'
+            : slot.kind === 'ai' ? 'AI' : 'OPEN';
+        li.innerHTML = `<span>${filled ? slot.name : `Slot ${i + 1}`}</span><span class="mm-kind ${slot.kind}">${kindLabel}</span>`;
+        ul.appendChild(li);
+      });
+    };
+    paint('mm-slots-raiders', mmRoster.raiders, 'raiders');
+    paint('mm-slots-sentinels', mmRoster.sentinels, 'sentinels');
+  }
+
+  function formatMmClock(sec) {
+    const s = Math.max(0, sec | 0);
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${m}:${String(r).padStart(2, '0')}`;
+  }
+
+  function stopMatchmaking(resetUi = true) {
+    if (mmTimer) {
+      clearInterval(mmTimer);
+      mmTimer = null;
+    }
+    if (resetUi) {
+      $('team-matchmaking')?.classList.add('hidden');
+      $('team-pick')?.classList.remove('hidden');
+      if ($('mm-status')) $('mm-status').textContent = 'SEARCHING FOR OPERATORS';
+      if ($('mm-sub')) $('mm-sub').textContent = 'Looking for players on both fleets…';
+    }
+  }
+
+  function fillRemainingWithAi() {
+    for (const team of ['raiders', 'sentinels']) {
+      const pool = [...(BOT_NAMES[team] || FAKE_JOIN_NAMES[team])];
+      const used = new Set(mmRoster[team].filter((s) => s.kind !== 'empty').map((s) => s.name));
+      mmRoster[team] = mmRoster[team].map((slot) => {
+        if (slot.kind === 'you') return slot;
+        // Local-only: found “players” and empty seats deploy as AI with names
+        if (slot.kind === 'human') return { name: slot.name, kind: 'ai' };
+        if (slot.kind !== 'empty') return slot;
+        let name = pool.find((n) => !used.has(n)) || `AI-${team[0].toUpperCase()}${used.size}`;
+        used.add(name);
+        return { name, kind: 'ai' };
+      });
+    }
+    renderMmSlots();
+  }
+
+  function tryFakeJoin() {
+    // Chance to seat a “found” human on either team while searching
+    const teams = ['raiders', 'sentinels'];
+    const order = Math.random() > 0.5 ? teams : teams.slice().reverse();
+    for (const team of order) {
+      const idx = mmRoster[team].findIndex((s) => s.kind === 'empty');
+      if (idx < 0) continue;
+      // Never overwrite the player's reserved seat (index 0 on their team is already filled)
+      const pool = FAKE_JOIN_NAMES[team].filter(
+        (n) => !mmRoster[team].some((s) => s.name === n)
+      );
+      if (!pool.length) continue;
+      if (Math.random() > 0.55) continue;
+      const name = pool[Math.floor(Math.random() * pool.length)];
+      mmRoster[team][idx] = { name, kind: 'human' };
+      if ($('mm-sub')) $('mm-sub').textContent = `${name} joined ${team === 'raiders' ? 'Raiders' : 'Sentinels'}`;
+      SFX.ui();
+      renderMmSlots();
+      return;
+    }
+  }
+
+  function launchMatchFromMm() {
+    stopMatchmaking(false);
+    if ($('mm-status')) $('mm-status').textContent = 'LOCKING ROSTER';
+    if ($('mm-sub')) $('mm-sub').textContent = 'Empty seats filled with AI. Deploying…';
+    fillRemainingWithAi();
+    const roster = {
+      raiders: mmRoster.raiders.map((s) => ({ name: s.name, kind: s.kind })),
+      sentinels: mmRoster.sentinels.map((s) => ({ name: s.name, kind: s.kind })),
+    };
+    setTimeout(() => {
+      stopMatchmaking(true);
+      game.startMatch({
+        team: mmTeam,
+        mapId: opsMap,
+        modeId: opsMode,
+        roster,
+      });
+    }, 650);
+  }
+
+  function startMatchmaking(team) {
+    stopMatchmaking(false);
+    mmTeam = team;
+    mmSecondsLeft = MM_WAIT_SEC;
+    mmRoster = blankRoster(team);
+    $('team-pick')?.classList.add('hidden');
+    $('team-matchmaking')?.classList.remove('hidden');
+    if ($('mm-status')) $('mm-status').textContent = 'SEARCHING FOR OPERATORS';
+    if ($('mm-sub')) {
+      $('mm-sub').textContent = team === TEAMS.RAIDERS
+        ? 'You locked Raiders. Finding attackers & defenders…'
+        : 'You locked Sentinels. Finding defenders & raiders…';
+    }
+    if ($('mm-countdown')) $('mm-countdown').textContent = formatMmClock(mmSecondsLeft);
+    renderMmSlots();
+    SFX.ui();
+
+    mmTimer = setInterval(() => {
+      mmSecondsLeft -= 1;
+      if ($('mm-countdown')) $('mm-countdown').textContent = formatMmClock(mmSecondsLeft);
+      // Stagger joins across the minute
+      if (mmSecondsLeft > 3 && mmSecondsLeft % 7 === 0) tryFakeJoin();
+      if (mmSecondsLeft <= 0) {
+        launchMatchFromMm();
+      }
+    }, 1000);
+  }
 
   function showScreen(name) {
     Object.entries(screens).forEach(([k, el]) => {
@@ -108,6 +263,7 @@ export function createUI(game, inventory) {
   $('btn-ops-back').onclick = () => { SFX.ui(); showScreen('menu'); };
   $('btn-team-back').onclick = () => {
     SFX.ui();
+    stopMatchmaking(true);
     renderOps();
     showScreen('ops');
   };
@@ -120,21 +276,22 @@ export function createUI(game, inventory) {
     }
     inventory.setOps(opsMap, opsMode);
     if (mode.teams) {
+      stopMatchmaking(true);
       showScreen('team');
     } else {
       game.startMatch({ team: TEAMS.RAIDERS, mapId: opsMap, modeId: opsMode });
     }
   };
-  $('pick-raiders').onclick = () => game.startMatch({
-    team: TEAMS.RAIDERS,
-    mapId: opsMap,
-    modeId: opsMode,
-  });
-  $('pick-sentinels').onclick = () => game.startMatch({
-    team: TEAMS.SENTINELS,
-    mapId: opsMap,
-    modeId: opsMode,
-  });
+  $('pick-raiders').onclick = () => startMatchmaking(TEAMS.RAIDERS);
+  $('pick-sentinels').onclick = () => startMatchmaking(TEAMS.SENTINELS);
+  $('btn-mm-cancel').onclick = () => {
+    SFX.ui();
+    stopMatchmaking(true);
+  };
+  $('btn-mm-deploy').onclick = () => {
+    SFX.ui();
+    launchMatchFromMm();
+  };
   $('btn-buy-close').onclick = () => game.closeBuyMenu();
 
   function renderOps() {
