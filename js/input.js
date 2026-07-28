@@ -100,16 +100,25 @@ export function createInput() {
   }, { passive: false });
   window.addEventListener('mousedown', (e) => {
     if (e.button === 0) mouse.down = true;
-    if (e.button === 2) mouse.right = true;
+    if (e.button === 2) {
+      mouse.right = true;
+      // Roblox-style look: lock pointer while RMB is held for smooth turning
+      if (!cmdMode) {
+        const c = document.getElementById('game-canvas');
+        if (c && !pointerLocked) c.requestPointerLock?.();
+      }
+    }
   });
   window.addEventListener('mouseup', (e) => {
     if (e.button === 0) mouse.down = false;
     if (e.button === 2) mouse.right = false;
   });
   window.addEventListener('mousemove', (e) => {
-    if (!pointerLocked || cmdMode) return;
-    mouse.dx += e.movementX;
-    mouse.dy += e.movementY;
+    if (cmdMode) return;
+    // Roblox-style: only accumulate look delta while right mouse is held
+    if (!mouse.right) return;
+    mouse.dx += e.movementX || 0;
+    mouse.dy += e.movementY || 0;
   });
   window.addEventListener('contextmenu', (e) => e.preventDefault());
 

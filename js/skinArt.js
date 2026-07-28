@@ -41,7 +41,8 @@ function hash(i) {
 
 /**
  * Paint a finish pattern into an existing canvas context.
- * Patterns: solid, camo, digital, hex, carbon, tiger, rust, circuit, pearl, scale, stripes, mesh, splatter
+ * Patterns: solid, camo, digital, hex, carbon, tiger, rust, circuit, pearl, scale,
+ * stripes, mesh, splatter, magma, aurora, holo, plasma, prism, nova, obsidian, fractal
  */
 export function paintPattern(ctx, w, h, skin) {
   const primary = hexColor(skin.color);
@@ -219,6 +220,182 @@ export function paintPattern(ctx, w, h, skin) {
       ctx.beginPath();
       ctx.ellipse(x, y, 3 + hash(i) * 16, 2 + hash(i + 1) * 10, hash(i) * 3, 0, Math.PI * 2);
       ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  } else if (pattern === 'magma') {
+    ctx.fillStyle = shade(skin.color, -50);
+    ctx.fillRect(0, 0, w, h);
+    for (let i = 0; i < 36; i++) {
+      const g = ctx.createRadialGradient(
+        hash(seed + i) * w, hash(seed + i + 3) * h, 2,
+        hash(seed + i) * w, hash(seed + i + 3) * h, 20 + hash(i) * 40
+      );
+      g.addColorStop(0, tertiary);
+      g.addColorStop(0.45, secondary);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.globalAlpha = 0.55 + hash(i) * 0.4;
+      ctx.fillRect(0, 0, w, h);
+    }
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = tertiary;
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 12; i++) {
+      ctx.beginPath();
+      ctx.moveTo(hash(i) * w, hash(i + 2) * h);
+      ctx.bezierCurveTo(
+        hash(i + 4) * w, hash(i + 5) * h,
+        hash(i + 6) * w, hash(i + 7) * h,
+        hash(i + 8) * w, hash(i + 9) * h
+      );
+      ctx.stroke();
+    }
+  } else if (pattern === 'aurora') {
+    const g = ctx.createLinearGradient(0, 0, w, h);
+    g.addColorStop(0, primary);
+    g.addColorStop(0.35, secondary);
+    g.addColorStop(0.65, tertiary);
+    g.addColorStop(1, shade(skin.color, -40));
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+    for (let i = 0; i < 8; i++) {
+      ctx.strokeStyle = i % 2 ? tertiary : secondary;
+      ctx.globalAlpha = 0.35;
+      ctx.lineWidth = 10 + hash(i) * 18;
+      ctx.beginPath();
+      const y0 = hash(seed + i) * h;
+      ctx.moveTo(0, y0);
+      for (let x = 0; x <= w; x += 24) {
+        ctx.lineTo(x, y0 + Math.sin(x * 0.02 + i) * 28 * hash(i + 1));
+      }
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  } else if (pattern === 'holo') {
+    for (let y = 0; y < h; y++) {
+      const t = y / h;
+      const r = Math.floor(120 + Math.sin(t * 6.2 + seed) * 100);
+      const g = Math.floor(100 + Math.sin(t * 6.2 + 2.1) * 110);
+      const b = Math.floor(140 + Math.sin(t * 6.2 + 4.2) * 100);
+      ctx.fillStyle = `rgb(${r},${g},${b})`;
+      ctx.fillRect(0, y, w, 1);
+    }
+    ctx.globalAlpha = 0.45;
+    ctx.fillStyle = primary;
+    ctx.fillRect(0, 0, w, h);
+    ctx.globalAlpha = 0.55;
+    for (let i = 0; i < 20; i++) {
+      ctx.strokeStyle = tertiary;
+      ctx.lineWidth = 2;
+      const x = hash(seed + i) * w;
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x + (hash(i) - 0.5) * 40, h);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  } else if (pattern === 'plasma') {
+    ctx.fillStyle = shade(skin.color, -60);
+    ctx.fillRect(0, 0, w, h);
+    for (let i = 0; i < 55; i++) {
+      const x = hash(seed + i * 2) * w;
+      const y = hash(seed + i * 5) * h;
+      const rad = 8 + hash(i) * 28;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, rad);
+      g.addColorStop(0, tertiary);
+      g.addColorStop(0.4, secondary);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.globalAlpha = 0.7;
+      ctx.beginPath();
+      ctx.arc(x, y, rad, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  } else if (pattern === 'prism') {
+    for (let i = 0; i < 14; i++) {
+      const colors = [primary, secondary, tertiary, shade(skin.color, 40), shade(skin.color, -30)];
+      ctx.fillStyle = colors[i % colors.length];
+      ctx.beginPath();
+      const x0 = (i / 14) * w - 20;
+      ctx.moveTo(x0, 0);
+      ctx.lineTo(x0 + w * 0.22, 0);
+      ctx.lineTo(x0 + w * 0.08, h);
+      ctx.lineTo(x0 - w * 0.12, h);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.globalAlpha = 0.3;
+    const g = ctx.createLinearGradient(0, 0, w, 0);
+    g.addColorStop(0, '#ffffff');
+    g.addColorStop(0.5, 'rgba(255,255,255,0)');
+    g.addColorStop(1, '#ffffff');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+    ctx.globalAlpha = 1;
+  } else if (pattern === 'nova') {
+    ctx.fillStyle = shade(skin.color, -70);
+    ctx.fillRect(0, 0, w, h);
+    const cx = w * 0.5;
+    const cy = h * 0.45;
+    for (let i = 0; i < 48; i++) {
+      const a = (i / 48) * Math.PI * 2;
+      ctx.strokeStyle = i % 2 ? tertiary : secondary;
+      ctx.globalAlpha = 0.35 + hash(i) * 0.5;
+      ctx.lineWidth = 1 + hash(i) * 3;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(a) * w * 0.7, cy + Math.sin(a) * h * 0.7);
+      ctx.stroke();
+    }
+    const core = ctx.createRadialGradient(cx, cy, 2, cx, cy, w * 0.35);
+    core.addColorStop(0, tertiary);
+    core.addColorStop(0.4, secondary);
+    core.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = core;
+    ctx.fillRect(0, 0, w, h);
+  } else if (pattern === 'obsidian') {
+    ctx.fillStyle = primary;
+    ctx.fillRect(0, 0, w, h);
+    for (let i = 0; i < 24; i++) {
+      ctx.fillStyle = hash(i) > 0.5 ? secondary : tertiary;
+      ctx.globalAlpha = 0.25 + hash(i + 2) * 0.35;
+      ctx.beginPath();
+      const x = hash(seed + i) * w;
+      const y = hash(seed + i * 3) * h;
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + 40 + hash(i) * 60, y + 10);
+      ctx.lineTo(x + 20, y + 50 + hash(i) * 40);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    const sheen = ctx.createLinearGradient(0, 0, w, h);
+    sheen.addColorStop(0.2, 'rgba(255,255,255,0)');
+    sheen.addColorStop(0.45, 'rgba(255,255,255,0.2)');
+    sheen.addColorStop(0.55, 'rgba(255,255,255,0)');
+    ctx.fillStyle = sheen;
+    ctx.fillRect(0, 0, w, h);
+  } else if (pattern === 'fractal') {
+    ctx.fillStyle = shade(skin.color, -40);
+    ctx.fillRect(0, 0, w, h);
+    const drawBranch = (x, y, ang, len, depth) => {
+      if (depth <= 0 || len < 3) return;
+      const x2 = x + Math.cos(ang) * len;
+      const y2 = y + Math.sin(ang) * len;
+      ctx.strokeStyle = depth % 2 ? secondary : tertiary;
+      ctx.globalAlpha = 0.35 + depth * 0.1;
+      ctx.lineWidth = Math.max(1, depth * 0.7);
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+      drawBranch(x2, y2, ang - 0.45, len * 0.72, depth - 1);
+      drawBranch(x2, y2, ang + 0.5, len * 0.68, depth - 1);
+    };
+    for (let i = 0; i < 6; i++) {
+      drawBranch(w * 0.5, h * 0.85, -Math.PI / 2 + (i - 2.5) * 0.2, h * 0.22, 6);
     }
     ctx.globalAlpha = 1;
   }
