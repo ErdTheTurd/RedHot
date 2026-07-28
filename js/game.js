@@ -157,14 +157,12 @@ export class Game {
     this.clearMines();
 
     if (this.mode.bots === 'full') {
-      const raiderBots = team === TEAMS.RAIDERS ? 3 : 4;
-      const sentinelBots = team === TEAMS.SENTINELS ? 3 : 4;
-      for (let i = 0; i < raiderBots; i++) {
-        const spawn = spawnsR[team === TEAMS.RAIDERS ? i + 1 : i];
+      const roster = opts.roster || null;
+      const addBot = (id, name, teamKey, spawn) => {
         const u = new Unit({
-          id: `r${i}`,
-          name: BOT_NAMES.raiders[i],
-          team: TEAMS.RAIDERS,
+          id,
+          name,
+          team: teamKey,
           spawn,
           vehicleId: 'scout_tracker',
           getGroundY: groundY,
@@ -172,20 +170,44 @@ export class Game {
         u.money = START_MONEY;
         this.scene.add(u.mesh);
         this.units.push(u);
-      }
-      for (let i = 0; i < sentinelBots; i++) {
-        const spawn = spawnsS[team === TEAMS.SENTINELS ? i + 1 : i];
-        const u = new Unit({
-          id: `s${i}`,
-          name: BOT_NAMES.sentinels[i],
-          team: TEAMS.SENTINELS,
-          spawn,
-          vehicleId: 'scout_tracker',
-          getGroundY: groundY,
+      };
+
+      if (roster?.raiders && roster?.sentinels) {
+        let rSpawn = team === TEAMS.RAIDERS ? 1 : 0;
+        let sSpawn = team === TEAMS.SENTINELS ? 1 : 0;
+        roster.raiders.forEach((slot, i) => {
+          if (slot.kind === 'you') return;
+          const spawn = spawnsR[rSpawn % spawnsR.length];
+          rSpawn += 1;
+          addBot(
+            `r${i}`,
+            slot.name || BOT_NAMES.raiders[i % BOT_NAMES.raiders.length],
+            TEAMS.RAIDERS,
+            spawn
+          );
         });
-        u.money = START_MONEY;
-        this.scene.add(u.mesh);
-        this.units.push(u);
+        roster.sentinels.forEach((slot, i) => {
+          if (slot.kind === 'you') return;
+          const spawn = spawnsS[sSpawn % spawnsS.length];
+          sSpawn += 1;
+          addBot(
+            `s${i}`,
+            slot.name || BOT_NAMES.sentinels[i % BOT_NAMES.sentinels.length],
+            TEAMS.SENTINELS,
+            spawn
+          );
+        });
+      } else {
+        const raiderBots = team === TEAMS.RAIDERS ? 3 : 4;
+        const sentinelBots = team === TEAMS.SENTINELS ? 3 : 4;
+        for (let i = 0; i < raiderBots; i++) {
+          const spawn = spawnsR[team === TEAMS.RAIDERS ? i + 1 : i];
+          addBot(`r${i}`, BOT_NAMES.raiders[i], TEAMS.RAIDERS, spawn);
+        }
+        for (let i = 0; i < sentinelBots; i++) {
+          const spawn = spawnsS[team === TEAMS.SENTINELS ? i + 1 : i];
+          addBot(`s${i}`, BOT_NAMES.sentinels[i], TEAMS.SENTINELS, spawn);
+        }
       }
     } else if (this.mode.bots === 'hostiles' || this.mode.bots === 'waves') {
       const n = this.mode.hostileCount || 6;

@@ -711,31 +711,9 @@ def main():
     for row in ACCESSORIES:
         make_gear(*row)
 
-    make_domain_case(
-        CASES / "tank-case.png", "land", "TANK CASE", "LAND FLEET ONLY",
-        (58, 72, 36), (12, 14, 10), (180, 200, 90),
-    )
-    make_domain_case(
-        CASES / "ship-case.png", "sea", "SHIP CASE", "SEA FLEET ONLY",
-        (28, 70, 96), (6, 14, 24), (80, 190, 230),
-    )
-    make_domain_case(
-        CASES / "jet-case.png", "air", "JET CASE", "AIR FLEET ONLY",
-        (70, 55, 30), (12, 10, 16), (230, 180, 90),
-    )
-
-    make_domain_key(
-        KEYS / "tank-key.png", "TANK KEY",
-        (50, 62, 30), (10, 12, 8), (180, 200, 90), (70, 82, 40), (220, 230, 140), 21, "tank",
-    )
-    make_domain_key(
-        KEYS / "ship-key.png", "SHIP KEY",
-        (20, 55, 78), (6, 12, 20), (80, 190, 230), (30, 70, 90), (255, 210, 90), 33, "ship",
-    )
-    make_domain_key(
-        KEYS / "jet-key.png", "JET KEY",
-        (60, 45, 22), (10, 8, 12), (230, 180, 90), (90, 65, 30), (255, 140, 60), 47, "jet",
-    )
+    # Domain case/key covers are hand-upgraded photoreal assets.
+    # Do not regenerate them here — that would downgrade Armory art.
+    print("skip domain case/key overwrite (use upgraded assets in assets/cases|keys)")
 
 
 if __name__ == "__main__":

@@ -550,58 +550,279 @@ html, body {
   #ops-maps { grid-template-columns: 1fr; }
 }
 
-/* —— TEAM —— */
-.team-select {
+/* —— TEAM / MATCHMAKING —— */
+#screen-team {
+  display: none;
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 0;
+  overflow: hidden;
+}
+
+#screen-team.active {
+  display: flex;
+}
+
+.team-atmosphere {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 70% 80% at 12% 50%, rgba(232, 93, 4, 0.28), transparent 55%),
+    radial-gradient(ellipse 70% 80% at 88% 50%, rgba(29, 155, 240, 0.26), transparent 55%),
+    linear-gradient(165deg, #081018 0%, #121e2a 48%, #0a141c 100%);
+  animation: atmosphere-drift 20s ease-in-out infinite alternate;
+}
+
+.team-atmosphere::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(
+      105deg,
+      transparent 0 22px,
+      rgba(215, 228, 236, 0.02) 22px 23px
+    );
+  pointer-events: none;
+}
+
+#screen-team > *:not(.team-atmosphere):not(.menu-grain) {
+  position: relative;
+  z-index: 1;
+}
+
+.team-stage {
+  width: 100%;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(1.25rem, 4vh, 2.5rem) clamp(1rem, 4vw, 2.5rem);
+  gap: 0.75rem;
+}
+
+.team-brand {
+  font-size: clamp(3.2rem, 11vw, 7rem);
   text-align: center;
-  width: min(880px, 94vw);
+  margin: 0;
+  animation: hero-in 0.85s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.team-select h2 {
+.team-kicker {
   font-family: var(--font-display);
-  font-size: 2.4rem;
-  letter-spacing: 0.1em;
-  margin-bottom: 1.5rem;
+  font-size: clamp(1.4rem, 3vw, 2rem);
+  letter-spacing: 0.18em;
+  color: var(--foam);
+  margin: 0.2rem 0 0;
 }
 
-.team-grid {
+.team-lead,
+.mm-sub {
+  max-width: 36rem;
+  margin: 0.35rem auto 1.25rem;
+  color: var(--mist);
+  font-size: 0.98rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.team-pick {
+  width: min(1100px, 96vw);
+  text-align: center;
+  animation: hero-in 0.95s cubic-bezier(0.22, 1, 0.36, 1) 0.08s both;
+}
+
+.team-planes {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1rem;
+  margin: 1.25rem 0 1.5rem;
+  min-height: min(42vh, 340px);
 }
 
-.team-card {
+.team-plane {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 0;
+  padding: clamp(1.5rem, 4vh, 2.4rem) clamp(1.25rem, 3vw, 2rem);
   text-align: left;
-  padding: 1.75rem;
-  border: 1px solid var(--line);
-  background: rgba(12,18,24,0.85);
   color: var(--foam);
   cursor: pointer;
-  transition: border-color 0.2s, transform 0.2s, background 0.2s;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 240px;
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.team-card:hover { transform: translateY(-3px); }
+.team-plane-bg {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  transition: transform 0.5s ease, filter 0.35s ease;
+}
 
-.team-card.raiders:hover { border-color: var(--raid); background: rgba(232,93,4,0.12); }
-.team-card.sentinels:hover { border-color: var(--sent); background: rgba(29,155,240,0.12); }
+.team-plane.raiders .team-plane-bg {
+  background:
+    linear-gradient(135deg, rgba(232, 93, 4, 0.55) 0%, rgba(20, 10, 6, 0.2) 55%, rgba(8, 10, 12, 0.75) 100%),
+    linear-gradient(20deg, #2a1408, #0c1014 70%);
+}
 
-.team-tag {
-  font-size: 0.75rem;
-  letter-spacing: 0.16em;
+.team-plane.sentinels .team-plane-bg {
+  background:
+    linear-gradient(225deg, rgba(29, 155, 240, 0.5) 0%, rgba(6, 14, 24, 0.2) 55%, rgba(8, 10, 12, 0.75) 100%),
+    linear-gradient(-20deg, #0a1a28, #0c1014 70%);
+}
+
+.team-plane:hover {
+  transform: scale(1.015);
+}
+
+.team-plane:hover .team-plane-bg {
+  transform: scale(1.06);
+  filter: brightness(1.12);
+}
+
+.team-plane:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 3px;
+}
+
+.team-plane .team-tag {
+  font-size: 0.78rem;
+  letter-spacing: 0.2em;
+  color: rgba(215, 228, 236, 0.72);
+}
+
+.team-plane strong {
+  display: block;
+  font-family: var(--font-display);
+  font-size: clamp(2.6rem, 6vw, 4.2rem);
+  letter-spacing: 0.04em;
+  line-height: 0.95;
+  margin: 0.35rem 0 0.55rem;
+}
+
+.team-plane.raiders strong { color: #ff9a4a; }
+.team-plane.sentinels strong { color: #7ec8ff; }
+
+.team-plane em {
+  font-style: normal;
+  color: rgba(215, 228, 236, 0.78);
+  max-width: 18rem;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.team-matchmaking {
+  width: min(960px, 96vw);
+  text-align: center;
+  animation: hero-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.mm-countdown {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(4rem, 14vw, 7.5rem);
+  letter-spacing: 0.04em;
+  line-height: 0.9;
+  color: var(--signal);
+  text-shadow: 0 0 40px rgba(240, 192, 64, 0.25);
+  margin: 0.4rem 0;
+  animation: mm-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes mm-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.88; transform: scale(1.015); }
+}
+
+.mm-rosters {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin: 1.25rem 0 1.5rem;
+  text-align: left;
+}
+
+.mm-col h3 {
+  font-family: var(--font-display);
+  letter-spacing: 0.14em;
+  font-size: 1.15rem;
+  margin: 0 0 0.55rem;
+}
+
+.mm-col.raiders h3 { color: var(--raid); }
+.mm-col.sentinels h3 { color: var(--sent); }
+
+.mm-slots {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.mm-slots li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  background: rgba(8, 12, 18, 0.45);
+  border-left: 3px solid rgba(215, 228, 236, 0.18);
+  font-size: 0.92rem;
+  color: var(--mist);
+  transition: border-color 0.25s, background 0.25s, color 0.25s;
+}
+
+.mm-col.raiders .mm-slots li.filled {
+  border-left-color: var(--raid);
+  color: var(--foam);
+  background: rgba(232, 93, 4, 0.1);
+}
+
+.mm-col.sentinels .mm-slots li.filled {
+  border-left-color: var(--sent);
+  color: var(--foam);
+  background: rgba(29, 155, 240, 0.1);
+}
+
+.mm-slots li.you {
+  box-shadow: inset 0 0 0 1px rgba(240, 192, 64, 0.35);
+}
+
+.mm-slots li .mm-kind {
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   color: var(--mist);
 }
 
-.team-card strong {
-  display: block;
-  font-family: var(--font-display);
-  font-size: 2.2rem;
-  letter-spacing: 0.06em;
-  margin: 0.4rem 0;
+.mm-slots li.filled .mm-kind.ai { color: var(--signal); }
+.mm-slots li.filled .mm-kind.human { color: var(--ok); }
+.mm-slots li.filled .mm-kind.you { color: var(--signal); }
+
+.mm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
 }
 
-.team-card.raiders strong { color: var(--raid); }
-.team-card.sentinels strong { color: var(--sent); }
-
-.team-card p { color: var(--mist); }
+@media (max-width: 760px) {
+  .team-planes,
+  .mm-rosters {
+    grid-template-columns: 1fr;
+  }
+  .team-plane { min-height: 180px; }
+  .team-brand { font-size: clamp(2.8rem, 16vw, 4.5rem); }
+}
 
 /* —— BUY —— */
 #screen-buy {
@@ -1613,7 +1834,7 @@ tr.you { background: rgba(255,255,255,0.05); }
   .menu-cta { flex-direction: column; align-items: stretch; }
   .menu-strip { grid-template-columns: 1fr; }
   .strip-item { border-right: none; border-bottom: 1px solid var(--line); }
-  .team-grid, .sb-cols, .buy-layout, .inv-layout { grid-template-columns: 1fr; }
+  .team-planes, .mm-rosters, .sb-cols, .buy-layout, .inv-layout { grid-template-columns: 1fr; }
   .buy-layout { grid-template-rows: auto 1fr auto; }
   .buy-cats, .buy-detail, .inv-detail { border: none; border-bottom: 1px solid var(--line); }
   .buy-shell, .meta-shell { height: auto; max-height: calc(100dvh - 1rem); min-height: 70vh; }
