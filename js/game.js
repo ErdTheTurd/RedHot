@@ -1142,7 +1142,14 @@ export class Game {
     const ammo = unit.ammo[def.id];
     if (!ammo || unit.reloadT > 0) return;
     const magSize = unit.magSizeFor?.(def.id) || def.magSize;
-    if (ammo.mag >= magSize || ammo.reserve <= 0) return;
+    if (ammo.mag >= magSize || (ammo.reserve <= 0 && !(unit.isPlayer && isLucky()))) return;
+
+    if (unit.isPlayer && isLucky()) {
+      ammo.reserve = Math.max(ammo.reserve, 999);
+      ammo.mag = magSize;
+      this.ui.toast?.('Lucky reload', 700);
+      return;
+    }
 
     if (unit.isPlayer) {
       if (unit._triviaReloadPending) return;
