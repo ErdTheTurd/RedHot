@@ -2193,7 +2193,7 @@ export function createUI(game, inventory, opts = {}) {
         hint.textContent = 'Vigilante · F Gun · Shift+↑/↓ aim · Shift+W/S jet alt · B Bombs · X Mine · C Arsenal · Esc Extract';
         hint.style.color = '';
       } else if (v.domain === 'air') {
-        hint.textContent = 'F Gun · Shift+↑/↓ aim · Shift+W/S altitude · B Bombs · R Reload · 1–3 Slots';
+        hint.textContent = 'F Gun · Shift+↑/↓ aim · Shift+W/S altitude · B Bombs · R Reload · 1–3 Transform';
         hint.style.color = '';
       } else if (v.domain === 'sea') {
         hint.textContent = 'F Gun · Shift+↑/↓ aim · T Torpedo · X Mine · R Reload · Space Jump';

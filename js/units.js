@@ -3,6 +3,7 @@ import { VEHICLES } from './config.js';
 import { createVehicleMesh } from './models.js';
 import { isLucky, isSemiLucky } from './lucky.js';
 import { isDevOperator } from './dev.js';
+import { createTransformState, tickTransform } from './vehicleTransform.js';
 
 export { createVehicleMesh };
 
@@ -39,6 +40,8 @@ export class Unit {
     this.jumpAmmoCost = 5;
     this.stillT = 0;
     this.secondaryCooldown = 0;
+    this.transform = null;
+    this.transformLock = false;
     this.yaw = spawn?.yaw ?? 0;
     this.pitch = 0;
     this.vel = new THREE.Vector3();
@@ -192,11 +195,12 @@ export class Unit {
 
   /**
    * In-match slot swap. Does NOT refill bombs/torpedoes/mines (that was an exploit).
-   * Returns { ok, niceTry } when a rapid switch-refill attempt is detected.
+   * Starts a transformer-style domain change animation instead of an instant mesh swap.
    */
-  switchSlot(slot) {
+  switchSlot(slot, opts = {}) {
     if (!this.loadout[slot]) return { ok: false };
     if (slot === this.activeSlot) return { ok: false, same: true };
+    if (this.transformLock) return { ok: false, busy: true };
 
     const minesBefore = this.landmines || 0;
     const caps = this._ordnanceCaps();
@@ -210,7 +214,6 @@ export class Unit {
     if (since < 900) this._slotSwitchBurst = (this._slotSwitchBurst || 0) + 1;
     else this._slotSwitchBurst = 1;
 
-    // Old bug: _refillOrdnance on every switch. Rapid cycling after spending = exploit tell.
     const recentSpend = this._recentOrdnanceSpend && (now - this._recentOrdnanceSpend < 4000);
     const niceTry = !!(
       this.isPlayer &&
@@ -219,19 +222,70 @@ export class Unit {
     );
 
     this._stashOrdnance();
+    const fromId = this.vehicle?.id;
     this.activeSlot = slot;
     this.reloadT = 0;
-    this._swapMesh();
     this._restoreOrdnance();
-    // Mines are match-global — never bump on switch
     this.landmines = minesBefore;
 
-    return { ok: true, niceTry };
+    const toId = this.loadout[slot];
+    if (opts.instant || fromId === toId) {
+      this._swapMesh();
+      return { ok: true, niceTry, instant: true };
+    }
+    this.beginVehicleTransform(toId, { remote: !!opts.remote });
+    return { ok: true, niceTry, transforming: true };
+  }
+
+  /** Force a vehicle (used for remote net sync when loadout doesn't contain the id). */
+  forceVehicle(vehicleId, { animate = true, remote = true } = {}) {
+    if (!vehicleId || !VEHICLES[vehicleId]) return false;
+    if (this.vehicle?.id === vehicleId) return false;
+    if (this.transformLock && animate) return false;
+
+    const domain = VEHICLES[vehicleId].domain;
+    let slot = domain === 'land' ? 0 : domain === 'sea' ? 1 : 2;
+    // Prefer existing slot if already carrying this craft
+    const existing = this.loadout.indexOf(vehicleId);
+    if (existing >= 0) slot = existing;
+    else {
+      this.loadout[slot] = vehicleId;
+      this._ensureAmmo(vehicleId);
+    }
+
+    const fromId = this.vehicle?.id;
+    this.activeSlot = slot;
+    this.reloadT = 0;
+    if (!animate || fromId === vehicleId) {
+      this._swapMesh();
+      return true;
+    }
+    this.beginVehicleTransform(vehicleId, { remote });
+    return true;
+  }
+
+  beginVehicleTransform(toVehicleId, opts = {}) {
+    this.transform = createTransformState(this, toVehicleId, opts);
+    this.transformLock = true;
+  }
+
+  /** Advance transform; returns tick result for VFX hooks. */
+  updateVehicleTransform(dt, helpers = {}) {
+    if (!this.transform) return null;
+    const result = tickTransform(this, dt, helpers);
+    if (result.justSwapped) {
+      this._swapMesh();
+      // Reset fold pose on the new mesh so phase B can grow it
+      this.mesh.scale.set(0.25, 0.25, 0.25);
+      this.mesh.rotation.x = 0;
+      this.mesh.rotation.z = 0;
+    }
+    return result;
   }
 
   _swapMesh() {
     const pos = this.mesh.position.clone();
-    const yaw = this.mesh.rotation.y;
+    const yaw = this.yaw ?? this.mesh.rotation.y;
     const parent = this.mesh.parent;
     parent?.remove(this.mesh);
     const def = this.vehicle;
@@ -244,7 +298,7 @@ export class Unit {
     this.mesh.rotation.y = yaw;
     this.mesh.userData.unitId = this.id;
     parent?.add(this.mesh);
-    this._adjustHeight();
+    if (!this.transform) this._adjustHeight();
   }
 
   _adjustHeight() {
