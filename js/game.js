@@ -159,8 +159,8 @@ export class Game {
     for (const u of this.units) this.scene.remove(u.mesh);
     this.units = [];
 
-    const spawnsR = getSpawns('raiders');
-    const spawnsS = getSpawns('sentinels');
+    const spawnsR = getSpawns('raiders', this.mapId);
+    const spawnsS = getSpawns('sentinels', this.mapId);
     const groundY = (x, z) => this.map.groundHeight(x, z);
 
     const fleet = (this.inventory?.matchLoadout?.() || [])
@@ -434,10 +434,14 @@ export class Game {
     const known = (this.netHumans || []).find((h) => h.clientId === data.clientId);
     const team = data.team || known?.team || TEAMS.RAIDERS;
     const name = data.name || known?.username || 'Operator';
+<<<<<<< HEAD
     const spawns = getSpawns(
       team === TEAMS.SENTINELS ? 'sentinels' : 'raiders',
       this.mapId
     );
+=======
+    const spawns = getSpawns(team === TEAMS.SENTINELS ? 'sentinels' : 'raiders', this.mapId);
+>>>>>>> origin/main
     const spawn = spawns[Math.floor(Math.random() * spawns.length)] || spawns[0];
     const groundY = (x, z) => this.map.groundHeight(x, z);
     const vid = data.vehicleId && VEHICLES[data.vehicleId] ? data.vehicleId : 'scout_tracker';
@@ -656,8 +660,8 @@ export class Game {
     }
     this.effects = [];
 
-    const spawnsR = getSpawns('raiders');
-    const spawnsS = getSpawns('sentinels');
+    const spawnsR = getSpawns('raiders', this.mapId);
+    const spawnsS = getSpawns('sentinels', this.mapId);
     let ri = 0;
     let si = 0;
 
@@ -891,7 +895,7 @@ export class Game {
   }
 
   spawnSiegeWave() {
-    const spawnsS = getSpawns('sentinels');
+    const spawnsS = getSpawns('sentinels', this.mapId);
     const groundY = (x, z) => this.map.groundHeight(x, z);
     const pool = ['scout_tracker', 'patrol_cutter', 'falcon_interceptor', 'mbt_anvil', 'destroyer_hull'];
     for (let i = 0; i < 4; i++) {
@@ -2138,8 +2142,8 @@ export class Game {
 
   processRespawns() {
     const now = performance.now();
-    const spawnsR = getSpawns('raiders');
-    const spawnsS = getSpawns('sentinels');
+    const spawnsR = getSpawns('raiders', this.mapId);
+    const spawnsS = getSpawns('sentinels', this.mapId);
     for (const u of this.units) {
       if (u.alive || u.dying || !u._respawnAt || now < u._respawnAt) continue;
       u._respawnAt = 0;

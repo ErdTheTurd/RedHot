@@ -111,6 +111,131 @@ export function makeTerrainTexture() {
   return tex;
 }
 
+/** Sun-baked mesa / canyon ground. */
+export function makeDesertTerrain(size = 512) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#c49a58';
+  ctx.fillRect(0, 0, size, size);
+  const img = ctx.getImageData(0, 0, size, size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const i = (y * size + x) * 4;
+      const dune = Math.sin(x * 0.018 + y * 0.01) * Math.cos(y * 0.022) * 22;
+      const grit = (Math.random() - 0.5) * 20;
+      const strata = Math.sin(y * 0.08) * 8;
+      img.data[i] = Math.max(0, Math.min(255, 180 + dune * 0.7 + grit + strata));
+      img.data[i + 1] = Math.max(0, Math.min(255, 130 + dune * 0.4 + grit * 0.7));
+      img.data[i + 2] = Math.max(0, Math.min(255, 70 + dune * 0.2 + grit * 0.4));
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  // Red rock streaks
+  for (let i = 0; i < 8; i++) {
+    ctx.strokeStyle = `rgba(140,70,30,${0.12 + Math.random() * 0.12})`;
+    ctx.lineWidth = 6 + Math.random() * 14;
+    ctx.beginPath();
+    let x = Math.random() * size;
+    let y = Math.random() * size;
+    ctx.moveTo(x, y);
+    for (let s = 0; s < 5; s++) {
+      x += (Math.random() - 0.5) * 100;
+      y += 20 + Math.random() * 40;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = 8;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/** Fractured ice shelf albedo. */
+export function makeIceTerrain(size = 512) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#d8e8f4';
+  ctx.fillRect(0, 0, size, size);
+  const img = ctx.getImageData(0, 0, size, size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const i = (y * size + x) * 4;
+      const n = Math.sin(x * 0.05) * Math.cos(y * 0.04) * 10 + (Math.random() - 0.5) * 14;
+      const blue = Math.sin(x * 0.02 + y * 0.03) * 12;
+      img.data[i] = Math.max(0, Math.min(255, 210 + n));
+      img.data[i + 1] = Math.max(0, Math.min(255, 225 + n * 0.8));
+      img.data[i + 2] = Math.max(0, Math.min(255, 235 + blue + n * 0.5));
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  // Crack network
+  ctx.strokeStyle = 'rgba(80,120,160,0.35)';
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i < 28; i++) {
+    ctx.beginPath();
+    let x = Math.random() * size;
+    let y = Math.random() * size;
+    ctx.moveTo(x, y);
+    for (let s = 0; s < 4; s++) {
+      x += (Math.random() - 0.5) * 70;
+      y += (Math.random() - 0.5) * 70;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = 8;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/** Wet industrial yard plate. */
+export function makeNightYardTexture(size = 512) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#1a222c';
+  ctx.fillRect(0, 0, size, size);
+  const img = ctx.getImageData(0, 0, size, size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const i = (y * size + x) * 4;
+      const n = (Math.random() - 0.5) * 16;
+      const wet = Math.sin(x * 0.1) * Math.cos(y * 0.08) * 8;
+      img.data[i] = Math.max(0, Math.min(255, 28 + n + wet));
+      img.data[i + 1] = Math.max(0, Math.min(255, 34 + n + wet * 0.7));
+      img.data[i + 2] = Math.max(0, Math.min(255, 42 + n));
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  // Painted bay lines
+  ctx.strokeStyle = 'rgba(255,80,140,0.25)';
+  ctx.lineWidth = 3;
+  for (let i = 0; i < size; i += 64) {
+    ctx.beginPath();
+    ctx.moveTo(i, 0);
+    ctx.lineTo(i, size);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(60,255,200,0.18)';
+  for (let i = 0; i < size; i += 64) {
+    ctx.beginPath();
+    ctx.moveTo(0, i);
+    ctx.lineTo(size, i);
+    ctx.stroke();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = 8;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 export function makeAsphaltTexture() {
   const size = 256;
   const c = document.createElement('canvas');
