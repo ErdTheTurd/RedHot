@@ -434,14 +434,7 @@ export class Game {
     const known = (this.netHumans || []).find((h) => h.clientId === data.clientId);
     const team = data.team || known?.team || TEAMS.RAIDERS;
     const name = data.name || known?.username || 'Operator';
-<<<<<<< HEAD
-    const spawns = getSpawns(
-      team === TEAMS.SENTINELS ? 'sentinels' : 'raiders',
-      this.mapId
-    );
-=======
     const spawns = getSpawns(team === TEAMS.SENTINELS ? 'sentinels' : 'raiders', this.mapId);
->>>>>>> origin/main
     const spawn = spawns[Math.floor(Math.random() * spawns.length)] || spawns[0];
     const groundY = (x, z) => this.map.groundHeight(x, z);
     const vid = data.vehicleId && VEHICLES[data.vehicleId] ? data.vehicleId : 'scout_tracker';
