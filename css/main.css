@@ -1108,6 +1108,111 @@ html, body {
 
 .toast.show { opacity: 1; }
 
+/* ——— Live chat / comms ——— */
+.chat-panel {
+  position: absolute;
+  left: 1.1rem;
+  bottom: 7.5rem;
+  width: min(340px, calc(100vw - 2rem));
+  max-height: 42vh;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.55rem 0.65rem 0.65rem;
+  background: linear-gradient(160deg, rgba(8, 18, 28, 0.92), rgba(12, 28, 40, 0.88));
+  border: 1px solid rgba(120, 170, 200, 0.28);
+  border-radius: 6px;
+  z-index: 40;
+  pointer-events: none;
+  opacity: 0.92;
+}
+.chat-panel.chat-open {
+  pointer-events: auto;
+  opacity: 1;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+.chat-panel.hidden { display: none; }
+.chat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  font-size: 0.78rem;
+  color: #9ec9e6;
+}
+.chat-x {
+  background: transparent;
+  border: 0;
+  color: #9ec9e6;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.2rem;
+}
+.chat-log {
+  overflow-y: auto;
+  max-height: 22vh;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.82rem;
+  color: #d7e6f0;
+}
+.chat-line strong {
+  color: #ffb703;
+  font-weight: 700;
+}
+.chat-line.chat-admin strong {
+  color: #ff6b35;
+}
+.chat-emojis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+}
+.chat-emoji-btn {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1.2;
+  padding: 0.15rem 0.3rem;
+}
+.chat-emoji-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+.chat-compose {
+  display: flex;
+  gap: 0.35rem;
+}
+.chat-compose input {
+  flex: 1;
+  min-width: 0;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(158, 201, 230, 0.35);
+  color: #f0f6fa;
+  border-radius: 4px;
+  padding: 0.4rem 0.55rem;
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 0.88rem;
+}
+.btn-chat-send {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.75rem;
+}
+.dev-badge {
+  margin: 0.35rem 0 0;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: #ff6b35;
+  font-size: 0.95rem;
+}
+.dev-badge.hidden { display: none; }
+
 .crosshair {
   position: absolute;
   left: 50%;

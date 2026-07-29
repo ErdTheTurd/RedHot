@@ -17,6 +17,7 @@ import {
 import { MODES } from './progression.js';
 import { resolveQuality } from './graphics.js';
 import { toggleTriviaSkipped } from './trivia.js';
+import { isDevOperator } from './dev.js';
 import {
   isLucky,
   isSemiLucky,
@@ -282,13 +283,21 @@ export class Game {
     this.beginRound();
     // After first round reset so consumable bombs/mags aren't wiped by refill
     this.applyPlayerGear();
+    if (this.isDev()) setLucky(true);
     if (isLucky()) {
       this.inventory?.applyLuckyBlessing?.();
       this.applyLuckyToPlayer();
     } else if (isSemiLucky()) {
       this.applySemiLuckyToPlayer();
     }
+    if (this.isDev()) {
+      this.ui.toast?.('DEV ONLINE — full admin · Enter chat · /dev for commands', 3200);
+    }
     this._wireNetHandlers();
+  }
+
+  isDev() {
+    return isDevOperator(this.inventory?.profile?.callsign || this.player?.name);
   }
 
   _wireNetHandlers() {
@@ -298,6 +307,10 @@ export class Game {
       this.net.on('unit', (data) => this._onNetUnit(data)),
       this.net.on('matchMeta', (data) => this._onNetMeta(data)),
       this.net.on('event', (data) => this._onNetEvent(data)),
+      this.net.on('chat', (data) => {
+        if (!data || data.clientId === this._myNetId) return;
+        this.ui.pushChat?.(data);
+      }),
     ];
   }
 
@@ -388,8 +401,45 @@ export class Game {
       return;
     }
     if (data.clientId && data.clientId === this._myNetId) return;
-    const u = this.units.find((x) => x.netId && x.netId === data.clientId);
+    let u = this.units.find((x) => x.netId && x.netId === data.clientId);
+    if (!u && data.clientId) {
+      u = this._spawnRemoteHuman(data);
+    }
     if (u) this._applyUnitState(u, data, 0.5);
+  }
+
+  /** Create a remote human if their unit packet arrives before/without roster seat. */
+  _spawnRemoteHuman(data) {
+    if (!data?.clientId || data.clientId === this._myNetId) return null;
+    if (this.units.some((x) => x.netId === data.clientId)) {
+      return this.units.find((x) => x.netId === data.clientId);
+    }
+    const known = (this.netHumans || []).find((h) => h.clientId === data.clientId);
+    const team = data.team || known?.team || TEAMS.RAIDERS;
+    const name = data.name || known?.username || 'Operator';
+    const spawns = getSpawns(team === TEAMS.SENTINELS ? 'sentinels' : 'raiders');
+    const spawn = spawns[Math.floor(Math.random() * spawns.length)] || spawns[0];
+    const groundY = (x, z) => this.map.groundHeight(x, z);
+    const u = new Unit({
+      id: `h_${String(data.clientId).slice(0, 8)}`,
+      name,
+      team,
+      spawn,
+      vehicleId: data.vehicleId || 'scout_tracker',
+      getGroundY: groundY,
+    });
+    u.money = START_MONEY;
+    u.netId = data.clientId;
+    u.isRemote = true;
+    u.mesh.visible = true;
+    this.scene.add(u.mesh);
+    this.units.push(u);
+    if (!known) {
+      this.netHumans = this.netHumans || [];
+      this.netHumans.push({ clientId: data.clientId, username: name, team });
+    }
+    this.ui?.toast?.(`${name} linked in`, 1400);
+    return u;
   }
 
   _onNetMeta(data) {
@@ -430,6 +480,13 @@ export class Game {
         this.timer = Math.max(this.timer, Math.min(BUY_TIME_MAX, data.seconds));
         this.ui.toast?.(`Buy phase set to ${Math.round(this.timer)}s`, 2200);
         this.ui.showBanner?.('BUY EXTENDED', `${Math.round(this.timer)} seconds`);
+      }
+      return;
+    }
+
+    if (data.type === 'devEnd' && data.winner) {
+      if (!this.isNetHost) {
+        this.endRound?.(data.winner, 'DEV ended round');
       }
       return;
     }
@@ -1526,6 +1583,11 @@ export class Game {
     }
 
     if (cmd === '/unlucky' || cmd === '/unop' || cmd === '/mortal') {
+      if (this.isDev()) {
+        this.ui.toast('DEV cannot go unlucky — admin stays armed. Use /lucky toggle only for display.');
+        SFX.ui();
+        return;
+      }
       setLucky(false);
       clearSemiLucky();
       this._semiLuckyWasOn = false;
@@ -1548,9 +1610,122 @@ export class Game {
       return;
     }
 
+    if (cmd === '/dev' || cmd === '/dev-help') {
+      if (!this.isDev()) {
+        this.ui.toast('DEV only — enlist with callsign DEV');
+        return;
+      }
+      this.ui.toast('DEV: /dev-end /dev-win /dev-score /dev-host /dev-say /lucky /give-tokens — Enter opens chat', 4000);
+      return;
+    }
+
+    if (cmd === '/dev-end' || cmd === '/dev-round') {
+      if (!this.isDev()) {
+        this.ui.toast('DEV only');
+        return;
+      }
+      if (!this.running) {
+        this.ui.toast('No live match');
+        return;
+      }
+      const winner = parts[1] === 'sentinels' ? TEAMS.SENTINELS : TEAMS.RAIDERS;
+      this.endRound?.(winner, 'DEV ended round');
+      this.net?.publishEvent?.({ type: 'devEnd', eventId: `devend:${Date.now()}`, winner });
+      this.ui.toast(`DEV ended round → ${winner}`);
+      return;
+    }
+
+    if (cmd === '/dev-win') {
+      if (!this.isDev()) {
+        this.ui.toast('DEV only');
+        return;
+      }
+      if (this.player) {
+        this.score[this.player.team] = Math.max(this.score[this.player.team] || 0, ROUNDS_TO_WIN);
+      }
+      this.endRound?.(this.player?.team || TEAMS.RAIDERS, 'DEV win');
+      this.ui.toast('DEV forced win');
+      return;
+    }
+
+    if (cmd === '/dev-score') {
+      if (!this.isDev()) {
+        this.ui.toast('DEV only');
+        return;
+      }
+      const a = parseInt(parts[1], 10);
+      const b = parseInt(parts[2], 10);
+      if (Number.isFinite(a)) this.score.raiders = a;
+      if (Number.isFinite(b)) this.score.sentinels = b;
+      this.ui.toast(`DEV score Raiders ${this.score.raiders} · Sentinels ${this.score.sentinels}`);
+      return;
+    }
+
+    if (cmd === '/dev-host') {
+      if (!this.isDev()) {
+        this.ui.toast('DEV only');
+        return;
+      }
+      this.net?.forceLobbyHost?.();
+      this.isNetHost = true;
+      if (this.net) this.net.isMatchHost = true;
+      this.ui.toast('DEV claimed host authority');
+      return;
+    }
+
+    if (cmd === '/dev-say') {
+      if (!this.isDev()) {
+        this.ui.toast('DEV only');
+        return;
+      }
+      const msg = parts.slice(1).join(' ').trim() || 'DEV broadcast';
+      this.ui.pushChat?.({
+        username: 'DEV',
+        text: msg,
+        clientId: this._myNetId,
+        admin: true,
+      });
+      this.net?.publishChat?.(msg, { admin: true, username: 'DEV' });
+      return;
+    }
+
+    if (cmd === '/help' || cmd === '/?') {
+      this.ui.toast(
+        this.isDev()
+          ? 'DEV cmds: /dev /lucky /semi-lucky /unlucky /give-tokens /give-xp · Enter = chat'
+          : 'Commands: /lucky /semi-lucky /unlucky /give-tokens /give-xp /no-questions · Enter = chat'
+      );
+      return;
+    }
+
     this.ui.toast(
-      `Unknown command: ${cmd} — try /give-tokens, /give-xp, /no-questions, /lucky, /semi-lucky, or /unlucky`
+      `Unknown command: ${cmd} — try /help`
     );
+  }
+
+  /** Send a chat line (non-command). Returns true if sent. */
+  sendChat(text) {
+    const msg = String(text || '').trim().slice(0, 180);
+    if (!msg) return false;
+    if (msg.startsWith('/')) {
+      this.handleCommand(msg);
+      return true;
+    }
+    const payload = {
+      username: this.inventory?.profile?.callsign || this.net?.username || 'Operator',
+      text: msg,
+      clientId: this._myNetId || this.net?.clientId,
+      admin: this.isDev(),
+    };
+    this.ui.pushChat?.(payload);
+    const ok = this.net?.publishChat?.(msg, {
+      username: payload.username,
+      admin: payload.admin,
+    });
+    if (!ok && !this.netEnabled) {
+      this.ui.toast?.('Chat needs an online match or lobby', 1600);
+    }
+    return true;
   }
 
   applyLuckyToPlayer() {

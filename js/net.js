@@ -2,13 +2,19 @@
 
 import mqtt from 'mqtt';
 
-const ROOT = 'vs/redhot/v1';
+const ROOT = 'vs/redhot/v2';
 const BROKER_URL = 'wss://broker.hivemq.com:8884/mqtt';
-const PRESENCE_TTL_MS = 10000;
-const PRESENCE_BEAT_MS = 2500;
+const PRESENCE_TTL_MS = 16000;
+const PRESENCE_BEAT_MS = 2000;
 
 function topic(...parts) {
   return [ROOT, ...parts].join('/');
+}
+
+/** Shared lobby room for a theater so simultaneous Deploy always merges. */
+export function theaterLobbyId(mapId, modeId) {
+  const raw = `T_${String(mapId || 'map')}_${String(modeId || 'mode')}`;
+  return raw.replace(/[^a-zA-Z0-9_]/g, '').slice(0, 48);
 }
 
 export class NetClient {
@@ -24,6 +30,7 @@ export class NetClient {
     this.matchId = null;
     this.isMatchHost = false;
     this._beatTimer = null;
+    this._visHandler = null;
     this._listeners = {
       presence: [],
       lobby: [],
@@ -31,6 +38,7 @@ export class NetClient {
       unit: [],
       matchMeta: [],
       event: [],
+      chat: [],
       connection: [],
     };
   }
@@ -88,6 +96,7 @@ export class NetClient {
       this._emit('connection', { connected: true, reconnected: true });
       this._resubscribe();
       this.publishPresence(true);
+      if (this.lobbyId) this.electLobbyHost();
     });
     this.client.on('close', () => {
       this.connected = false;
@@ -97,7 +106,19 @@ export class NetClient {
 
     this._resubscribe();
     this.publishPresence(true);
-    this._beatTimer = setInterval(() => this.publishPresence(false), PRESENCE_BEAT_MS);
+    this._beatTimer = setInterval(() => {
+      this.publishPresence(false);
+      if (this.lobbyId && (this.status === 'searching' || this.status === 'lobby')) {
+        this.electLobbyHost();
+      }
+    }, PRESENCE_BEAT_MS);
+
+    // Tab focus — keep presence fresh so peers don't split lobbies
+    this._visHandler = () => {
+      if (document.visibilityState === 'visible') this.publishPresence(true);
+    };
+    document.addEventListener('visibilitychange', this._visHandler);
+
     return true;
   }
 
@@ -105,16 +126,20 @@ export class NetClient {
     if (!this.client) return;
     this.client.subscribe(topic('presence', '+'), { qos: 0 });
     if (this.lobbyId) {
-      this.client.subscribe(topic('lobby', this.lobbyId, '#'), { qos: 0 });
+      this.client.subscribe(topic('lobby', this.lobbyId, '#'), { qos: 1 });
     }
     if (this.matchId) {
-      this.client.subscribe(topic('match', this.matchId, '#'), { qos: 0 });
+      this.client.subscribe(topic('match', this.matchId, '#'), { qos: 1 });
     }
   }
 
   disconnect() {
     if (this._beatTimer) clearInterval(this._beatTimer);
     this._beatTimer = null;
+    if (this._visHandler) {
+      document.removeEventListener('visibilitychange', this._visHandler);
+      this._visHandler = null;
+    }
     try {
       if (this.client?.connected) {
         this.client.publish(topic('presence', this.clientId), '', { qos: 0, retain: true });
@@ -173,28 +198,45 @@ export class NetClient {
   }
 
   /**
-   * Join or create a lobby for map/mode. Returns { lobbyId, isHost }.
+   * Lowest clientId in this lobby wins host. Re-run on presence/hello so
+   * simultaneous Deploy never ends as two solo hosts.
+   */
+  electLobbyHost() {
+    if (!this.lobbyId || !this.clientId) return false;
+    const ids = new Set([this.clientId]);
+    for (const p of this.onlineOperators()) {
+      if (
+        p.lobbyId === this.lobbyId
+        && (p.status === 'searching' || p.status === 'lobby')
+        && p.clientId
+      ) {
+        ids.add(p.clientId);
+      }
+    }
+    const sorted = [...ids].sort();
+    const next = sorted[0] === this.clientId;
+    this.isLobbyHost = next;
+    return next;
+  }
+
+  /** Force host claim (DEV only — caller must gate). */
+  forceLobbyHost() {
+    this.isLobbyHost = true;
+  }
+
+  /**
+   * Join the shared theater lobby. Everyone on the same map/mode shares one room.
    */
   enterSearch({ mapId, modeId, team }) {
-    const peers = this.searchingPeers(mapId, modeId);
-    const existing = peers.find((p) => p.lobbyId);
-    let lobbyId;
-    let isHost;
-    if (existing?.lobbyId) {
-      lobbyId = existing.lobbyId;
-      isHost = false;
-    } else {
-      lobbyId = `L${this.clientId.slice(0, 10)}`;
-      isHost = true;
-    }
+    const lobbyId = theaterLobbyId(mapId, modeId);
     this.lobbyId = lobbyId;
-    this.isLobbyHost = isHost;
     this.matchId = null;
     this.isMatchHost = false;
     this._resubscribe();
     this.setStatus('searching', { mapId, modeId, team, lobbyId });
+    this.electLobbyHost();
     this.publishHello();
-    return { lobbyId, isHost };
+    return { lobbyId, isHost: this.isLobbyHost };
   }
 
   publishHello() {
@@ -206,9 +248,10 @@ export class NetClient {
       team: this.meta.team,
       mapId: this.meta.mapId,
       modeId: this.meta.modeId,
+      isHost: !!this.isLobbyHost,
       ts: Date.now(),
     };
-    this.client.publish(topic('lobby', this.lobbyId, 'hello'), JSON.stringify(msg), { qos: 0 });
+    this.client.publish(topic('lobby', this.lobbyId, 'hello'), JSON.stringify(msg), { qos: 1 });
   }
 
   publishLobbyState(state) {
@@ -216,7 +259,7 @@ export class NetClient {
     this.client.publish(
       topic('lobby', this.lobbyId, 'state'),
       JSON.stringify({ ...state, hostId: this.clientId, ts: Date.now() }),
-      { qos: 0 }
+      { qos: 1 }
     );
   }
 
@@ -224,7 +267,26 @@ export class NetClient {
     if (!this.lobbyId || !this.isLobbyHost || !this.client?.connected) return;
     const matchId = payload.matchId || `M${Date.now().toString(36)}`;
     const body = { ...payload, matchId, hostId: this.clientId, ts: Date.now() };
-    this.client.publish(topic('lobby', this.lobbyId, 'start'), JSON.stringify(body), { qos: 0 });
+    // QoS 1 + retain so joiners who subscribe a moment late still get start
+    this.client.publish(topic('lobby', this.lobbyId, 'start'), JSON.stringify(body), {
+      qos: 1,
+      retain: true,
+    });
+    // Re-fire a couple times in case the first packet races subscribe
+    setTimeout(() => {
+      if (this.client?.connected && this.matchId === matchId) {
+        this.client.publish(topic('lobby', this.lobbyId || theaterLobbyId(payload.mapId, payload.modeId), 'start'), JSON.stringify(body), { qos: 1 });
+      }
+    }, 250);
+    setTimeout(() => {
+      if (this.client?.connected && this.matchId === matchId) {
+        this.client.publish(
+          topic('lobby', theaterLobbyId(payload.mapId, payload.modeId), 'start'),
+          JSON.stringify(body),
+          { qos: 1 }
+        );
+      }
+    }, 700);
     this.matchId = matchId;
     this.isMatchHost = true;
     this._resubscribe();
@@ -238,14 +300,22 @@ export class NetClient {
   }
 
   /** Drop lobby subscription/state without touching an active match. */
-  clearLobby() {
+  clearLobby({ clearStart = false } = {}) {
+    // Only wipe retained start when abandoning a lobby (not when transitioning to a match)
+    if (clearStart && this.lobbyId && this.client?.connected && !this.matchId) {
+      try {
+        this.client.publish(topic('lobby', this.lobbyId, 'start'), '', { qos: 1, retain: true });
+      } catch {
+        /* ignore */
+      }
+    }
     this.lobbyId = null;
     this.isLobbyHost = false;
     this._resubscribe();
   }
 
   leaveLobby() {
-    this.clearLobby();
+    this.clearLobby({ clearStart: true });
     this.matchId = null;
     this.isMatchHost = false;
     this.setStatus('menu', {});
@@ -254,10 +324,15 @@ export class NetClient {
   attachMatch(matchId, isHost) {
     this.matchId = matchId;
     this.isMatchHost = !!isHost;
-    // Match channel only — lobby hello/state must not keep firing mid-match
+    // Keep lobbyId briefly for start re-publish, then drop hello/state noise
+    const priorLobby = this.lobbyId;
     this.lobbyId = null;
     this.isLobbyHost = false;
     this._resubscribe();
+    // Also subscribe prior lobby one more second for late start echoes (already launching)
+    if (priorLobby && this.client) {
+      this.client.subscribe(topic('lobby', priorLobby, '#'), { qos: 1 });
+    }
     this.setStatus('match', {
       ...this.meta,
       matchId,
@@ -301,12 +376,33 @@ export class NetClient {
     );
   }
 
+  /** Match or lobby chat (emoji-safe UTF-8). */
+  publishChat(text, extra = {}) {
+    const body = {
+      type: 'chat',
+      clientId: this.clientId,
+      username: this.username,
+      text: String(text || '').slice(0, 180),
+      ...extra,
+      ts: Date.now(),
+    };
+    if (!this.client?.connected) return false;
+    if (this.matchId) {
+      this.client.publish(topic('match', this.matchId, 'chat'), JSON.stringify(body), { qos: 0 });
+      return true;
+    }
+    if (this.lobbyId) {
+      this.client.publish(topic('lobby', this.lobbyId, 'chat'), JSON.stringify(body), { qos: 0 });
+      return true;
+    }
+    return false;
+  }
+
   _onMessage(t, buf) {
     let data;
     try {
       const text = buf.toString();
       if (!text) {
-        // retained clear
         const parts = t.split('/');
         if (parts[3] === 'presence' && parts[4]) {
           this.presence.delete(parts[4]);
@@ -320,7 +416,6 @@ export class NetClient {
     }
 
     const parts = t.split('/');
-    // vs / redhot / v1 / ...
     const kind = parts[3];
 
     if (kind === 'presence') {
@@ -330,6 +425,9 @@ export class NetClient {
       this.presence.set(id, data);
       this._prunePresence();
       this._emit('presence', this.onlineOperators());
+      if (this.lobbyId && (this.status === 'searching' || this.status === 'lobby')) {
+        this.electLobbyHost();
+      }
       return;
     }
 
@@ -338,6 +436,16 @@ export class NetClient {
       if (ch === 'state') this._emit('lobby', { type: 'state', data });
       else if (ch === 'hello') this._emit('lobby', { type: 'hello', data });
       else if (ch === 'start') this._emit('lobby', { type: 'start', data });
+      else if (ch === 'chat') this._emit('chat', data);
+      return;
+    }
+
+    // Accept retained/late start for our theater even if lobbyId already cleared
+    if (kind === 'lobby' && parts[5] === 'start' && data?.matchId && !this.matchId) {
+      const expected = theaterLobbyId(this.meta.mapId, this.meta.modeId);
+      if (parts[4] === expected || (data.mapId === this.meta.mapId && data.modeId === this.meta.modeId)) {
+        this._emit('lobby', { type: 'start', data });
+      }
       return;
     }
 
@@ -347,6 +455,7 @@ export class NetClient {
       else if (ch === 'meta') this._emit('matchMeta', data);
       else if (ch === 'ai') this._emit('unit', { ...data, aiBundle: true });
       else if (ch === 'event') this._emit('event', data);
+      else if (ch === 'chat') this._emit('chat', data);
     }
   }
 

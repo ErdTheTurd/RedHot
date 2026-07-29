@@ -128,3 +128,19 @@ export async function loginAccount(username, password = '') {
 export function logoutAccount() {
   setLoggedIn(false);
 }
+
+/** Rename the local operator callsign (needed to become DEV on an existing profile). */
+export async function renameAccount(username) {
+  const account = loadRaw();
+  if (!account) return { ok: false, reason: 'No account on this device' };
+  const check = validateUsername(username);
+  if (!check.ok) return check;
+  account.username = check.username;
+  saveRaw(account);
+  return { ok: true, account };
+}
+
+export function isDevAccount() {
+  const a = loadRaw();
+  return String(a?.username || '').trim().toUpperCase() === 'DEV';
+}

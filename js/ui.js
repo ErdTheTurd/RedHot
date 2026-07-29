@@ -13,8 +13,11 @@ import { MAX_ADS_PER_DAY } from './ads.js';
 import { getGraphicsPreset, setGraphicsPreset } from './graphics.js';
 import { pickTriviaQuestions, defaultPassNeed, isTriviaSkipped } from './trivia.js';
 import {
-  hasAccount, getAccount, isLoggedIn, createAccount, loginAccount,
+  hasAccount, getAccount, isLoggedIn, createAccount, loginAccount, renameAccount,
 } from './account.js';
+import { isDevOperator, isDevName } from './dev.js';
+
+const CHAT_EMOJIS = ['🔥', '💀', '😎', '🚀', '💥', '🎯', '🏆', '👀', '😂', '🫡', '⚡', '🛡️'];
 
 function skinImg(skin) {
   const domain = VEHICLES[skin.vehicleId]?.domain || 'land';
@@ -74,10 +77,103 @@ export function createUI(game, inventory, opts = {}) {
   let mmNetMode = false;
   let mmLaunching = false;
   let unsubLobby = null;
+  let unsubChat = null;
   let myBuyVote = null;
+  let chatOpen = false;
 
   function callsign() {
     return inventory.profile?.callsign || getAccount()?.username || 'You';
+  }
+
+  function iAmDev() {
+    return isDevOperator(callsign());
+  }
+
+  function updateMmDeployLabel() {
+    const btn = $('btn-mm-deploy');
+    if (!btn) return;
+    if (!mmNetMode) {
+      btn.textContent = 'DEPLOY NOW';
+      btn.disabled = false;
+      return;
+    }
+    const host = !!(net?.isLobbyHost || iAmDev());
+    btn.disabled = false;
+    btn.textContent = host
+      ? (iAmDev() ? 'DEV DEPLOY' : 'DEPLOY NOW (HOST)')
+      : 'WAITING FOR HOST…';
+  }
+
+  function pushChat(msg) {
+    const log = $('chat-log');
+    if (!log || !msg) return;
+    const row = document.createElement('div');
+    row.className = `chat-line${msg.admin ? ' chat-admin' : ''}`;
+    const who = document.createElement('strong');
+    who.textContent = msg.username || 'Operator';
+    const body = document.createElement('span');
+    body.textContent = ` ${msg.text || ''}`;
+    row.appendChild(who);
+    row.appendChild(body);
+    log.appendChild(row);
+    while (log.children.length > 40) log.removeChild(log.firstChild);
+    log.scrollTop = log.scrollHeight;
+    $('chat-panel')?.classList.remove('hidden');
+  }
+
+  function openChat() {
+    const panel = $('chat-panel');
+    const input = $('chat-input');
+    if (!panel || !input) return;
+    chatOpen = true;
+    panel.classList.remove('hidden');
+    panel.classList.add('chat-open');
+    game.input?.exitLock?.();
+    input.value = '';
+    setTimeout(() => input.focus(), 0);
+  }
+
+  function closeChat(reLock = true) {
+    const panel = $('chat-panel');
+    const input = $('chat-input');
+    chatOpen = false;
+    panel?.classList.remove('chat-open');
+    input?.blur();
+    if (reLock && game.running && !game.buyOpen) game.input?.requestLock?.();
+  }
+
+  function submitChat() {
+    const input = $('chat-input');
+    if (!input) return;
+    const text = input.value.trim();
+    input.value = '';
+    closeChat(true);
+    if (!text) return;
+    if (text.startsWith('/')) {
+      game.handleCommand?.(text);
+      return;
+    }
+    game.sendChat?.(text);
+  }
+
+  function paintChatEmojis() {
+    const bar = $('chat-emojis');
+    if (!bar || bar.dataset.ready) return;
+    bar.dataset.ready = '1';
+    for (const emo of CHAT_EMOJIS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'chat-emoji-btn';
+      b.textContent = emo;
+      b.title = emo;
+      b.onclick = () => {
+        const input = $('chat-input');
+        if (!input) return;
+        input.value = `${input.value}${emo}`;
+        input.focus();
+      };
+      bar.appendChild(b);
+    }
   }
 
   function emptySlot() {
@@ -343,14 +439,36 @@ export function createUI(game, inventory, opts = {}) {
           ? 'Deploying live operators + AI fill…'
           : 'Empty seats filled with AI. Deploying…';
       }
-      fillRemainingWithAi(netMode && humanCountInRoster() > 1);
+      // Always rebuild from live members so peers hello'd in are on the start roster
+      if (netMode && net) {
+        if (iAmDev()) net.forceLobbyHost?.();
+        net.electLobbyHost?.();
+        rebuildRosterFromMembers();
+      }
+      fillRemainingWithAi(netMode && (mmLobbyMembers.size > 1 || humanCountInRoster() > 1));
       roster = {
         raiders: mmRoster.raiders.map((s) => ({ ...s })),
         sentinels: mmRoster.sentinels.map((s) => ({ ...s })),
       };
-      if (netMode && isHost && net) {
+      const hostNow = !!(netMode && net && (net.isLobbyHost || iAmDev()));
+      if (netMode && hostNow && net) {
+        if (iAmDev() && !net.isLobbyHost) net.forceLobbyHost?.();
         matchId = `M${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
         roster = rosterForNet(roster);
+        // Guarantee every lobby member is on the published roster
+        for (const m of mmLobbyMembers.values()) {
+          if (!m.clientId) continue;
+          const side = m.team === TEAMS.SENTINELS ? 'sentinels' : 'raiders';
+          const exists = roster[side].some((s) => s.clientId === m.clientId)
+            || roster.raiders.some((s) => s.clientId === m.clientId)
+            || roster.sentinels.some((s) => s.clientId === m.clientId);
+          if (!exists) {
+            const slot = { name: m.username || 'Operator', kind: 'human', clientId: m.clientId };
+            const empty = roster[side].findIndex((s) => s.kind === 'ai' || s.kind === 'empty');
+            if (empty >= 0) roster[side][empty] = slot;
+            else roster[side].push(slot);
+          }
+        }
         net.publishMatchStart({
           matchId,
           mapId,
@@ -359,6 +477,21 @@ export function createUI(game, inventory, opts = {}) {
           roster,
         });
         net.attachMatch(matchId, true);
+      } else if (netMode && !hostNow) {
+        // Non-host Deploy must not start a solo offline match — wait for host start
+        mmLaunching = false;
+        if ($('mm-status')) $('mm-status').textContent = 'WAITING FOR HOST';
+        if ($('mm-sub')) {
+          $('mm-sub').textContent = iAmDev()
+            ? 'DEV: claim host failed — retry Deploy'
+            : 'Only the lobby host can Deploy. Hang tight…';
+        }
+        toast('Waiting for lobby host to Deploy…');
+        // Restart hello clock bits if needed
+        if (!mmHelloTimer && net) {
+          mmHelloTimer = setInterval(() => net.publishHello(), 3000);
+        }
+        return;
       }
     }
 
@@ -403,15 +536,24 @@ export function createUI(game, inventory, opts = {}) {
         username: d.username || 'Operator',
         team: d.team === TEAMS.SENTINELS ? TEAMS.SENTINELS : TEAMS.RAIDERS,
       });
+      net?.electLobbyHost?.();
+      updateMmDeployLabel();
       if (net?.isLobbyHost) {
         rebuildRosterFromMembers();
         publishHostLobbyState();
         const n = mmLobbyMembers.size;
         if ($('mm-sub')) {
           $('mm-sub').textContent = n > 1
-            ? `${n} live operators in lobby — syncing fleets…`
+            ? `${n} live operators in lobby — you are HOST · Deploy when ready`
             : 'Waiting for other operators on this theater…';
         }
+        if ($('mm-status') && n > 1) $('mm-status').textContent = 'LIVE LOBBY · HOST';
+      } else if ($('mm-sub')) {
+        const n = mmLobbyMembers.size;
+        $('mm-sub').textContent = n > 1
+          ? `${n} operators linked — waiting for host Deploy`
+          : 'Joined theater lobby — waiting for host…';
+        if ($('mm-status') && n > 1) $('mm-status').textContent = 'LIVE LOBBY';
       }
     } else if (msg.type === 'state' && msg.data && !net?.isLobbyHost) {
       const d = msg.data;
@@ -474,16 +616,28 @@ export function createUI(game, inventory, opts = {}) {
         team,
       });
       unsubLobby = net.on('lobby', onLobbyMessage);
+      if (!unsubChat) {
+        unsubChat = net.on('chat', (data) => {
+          if (!data || data.clientId === net?.clientId) return;
+          pushChat(data);
+        });
+      }
       net.publishHello();
-      mmHelloTimer = setInterval(() => net.publishHello(), 3000);
-      if (isHost) {
+      mmHelloTimer = setInterval(() => {
+        net.electLobbyHost?.();
+        net.publishHello();
+        updateMmDeployLabel();
+        if (net.isLobbyHost) publishHostLobbyState();
+      }, 2500);
+      if (isHost || net.isLobbyHost) {
         rebuildRosterFromMembers();
         publishHostLobbyState();
       }
+      updateMmDeployLabel();
       if ($('mm-sub')) {
-        $('mm-sub').textContent = isHost
-          ? 'Live relay up — hosting this lobby for your theater…'
-          : 'Joining a live lobby on this theater…';
+        $('mm-sub').textContent = (isHost || net.isLobbyHost)
+          ? 'Live relay up — shared theater lobby · you may be HOST'
+          : 'Joining shared theater lobby — wait for host Deploy';
       }
     } else if ($('mm-sub')) {
       $('mm-sub').textContent = team === TEAMS.RAIDERS
@@ -525,13 +679,16 @@ export function createUI(game, inventory, opts = {}) {
     if ($('menu-wallet')) {
       const p = inventory.profile || {};
       const lvl = p.level || 1;
-      $('menu-wallet').textContent = `BANK ${w} · LV ${lvl}`;
+      $('menu-wallet').textContent = iAmDev()
+        ? `BANK ${w} · LV ${lvl} · DEV`
+        : `BANK ${w} · LV ${lvl}`;
     }
     if ($('shop-wallet')) $('shop-wallet').textContent = w;
     if ($('inv-wallet')) $('inv-wallet').textContent = w;
     if ($('menu-callsign')) {
-      $('menu-callsign').textContent = callsign();
+      $('menu-callsign').textContent = iAmDev() ? `${callsign()} · DEV ADMIN` : callsign();
     }
+    $('dev-badge')?.classList.toggle('hidden', !iAmDev());
   }
 
   function closeTrivia(result) {
@@ -554,7 +711,7 @@ export function createUI(game, inventory, opts = {}) {
     kicker = 'CATHOLIC TRIVIA',
     cancellable = true,
   } = {}) {
-    if (isTriviaSkipped()) return Promise.resolve(true);
+    if (isTriviaSkipped() || iAmDev()) return Promise.resolve(true);
     if (triviaBusy) return Promise.resolve(false);
     const questions = pickTriviaQuestions(count);
     const need = passNeed ?? defaultPassNeed(questions.length);
@@ -767,8 +924,13 @@ export function createUI(game, inventory, opts = {}) {
         toast('Playing offline — relay unavailable');
       }
     }
+    inventory.setCallsign(account.username);
     refreshMeta();
     renderOnlinePanel(net?.onlineOperators?.() || []);
+    paintChatEmojis();
+    if (isDevName(account.username)) {
+      toast('DEV privileges online — full admin, chat, match control', 3200);
+    }
     showScreen('menu');
   }
 
@@ -908,9 +1070,44 @@ export function createUI(game, inventory, opts = {}) {
   };
   $('btn-mm-deploy').onclick = () => {
     SFX.ui();
+    if (mmNetMode && net && !net.isLobbyHost && !iAmDev()) {
+      toast('Only the lobby host can Deploy — hang tight for the start signal');
+      updateMmDeployLabel();
+      return;
+    }
+    if (mmNetMode && iAmDev() && net && !net.isLobbyHost) {
+      net.forceLobbyHost?.();
+      toast('DEV forced lobby host');
+    }
     launchMatchFromMm();
   };
   $('btn-buy-close').onclick = () => game.closeBuyMenu();
+
+  // Chat panel
+  paintChatEmojis();
+  $('btn-chat-send')?.addEventListener('click', () => submitChat());
+  $('btn-chat-close')?.addEventListener('click', () => closeChat(true));
+  $('chat-input')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      submitChat();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeChat(true);
+    }
+  });
+  $('btn-become-dev')?.addEventListener('click', async () => {
+    SFX.ui();
+    const res = await renameAccount('DEV');
+    if (!res.ok) {
+      toast(res.reason || 'Could not set DEV');
+      return;
+    }
+    if (net) net.account = res.account;
+    inventory.setCallsign('DEV');
+    refreshMeta();
+    toast('Callsign is now DEV — full admin unlocked. Reload if multiplayer was mid-match.');
+  });
 
   function renderOps() {
     const profile = inventory.profile || {};
@@ -1953,6 +2150,11 @@ export function createUI(game, inventory, opts = {}) {
     const p = game.player;
     if (!p) return;
     $('hud').classList.remove('hidden');
+    // Chat log visible during match; compose opens on Enter
+    const chat = $('chat-panel');
+    if (chat && game.netEnabled) {
+      chat.classList.remove('hidden');
+    }
     $('hud-team-a').textContent = game.score.raiders;
     $('hud-team-b').textContent = game.score.sentinels;
     $('hud-phase').textContent = game.phaseLabel;
@@ -2123,5 +2325,9 @@ export function createUI(game, inventory, opts = {}) {
     askTrivia,
     renderBuyVote,
     gateAuthOrMenu,
+    pushChat,
+    openChat,
+    closeChat,
+    isChatOpen: () => chatOpen,
   };
 }

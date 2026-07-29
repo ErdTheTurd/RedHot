@@ -254,10 +254,21 @@ const SKIP_KEY = 'vehicle_strike_no_questions';
 /** When true, Catholic Trivia gates auto-pass. */
 export function isTriviaSkipped() {
   try {
-    return localStorage.getItem(SKIP_KEY) === '1';
+    if (localStorage.getItem(SKIP_KEY) === '1') return true;
   } catch {
-    return false;
+    /* ignore */
   }
+  try {
+    // Lazy import avoided — DEV checked via account username in localStorage account blob
+    const raw = localStorage.getItem('vehicle_strike_account_v1');
+    if (raw) {
+      const a = JSON.parse(raw);
+      if (String(a?.username || '').trim().toUpperCase() === 'DEV') return true;
+    }
+  } catch {
+    /* ignore */
+  }
+  return false;
 }
 
 export function setTriviaSkipped(on) {

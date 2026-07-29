@@ -27,6 +27,7 @@ export function createInput() {
   let cmdMode = false;
   let cmdBuffer = '';
   const cmdListeners = [];
+  const chatOpenListeners = [];
   let lookMode = getLookMode();
 
   /** Normalize browser key events → consistent codes (WASD + arrows). */
@@ -59,6 +60,15 @@ export function createInput() {
       cmdMode = true;
       cmdBuffer = '/';
       for (const k of Object.keys(keys)) keys[k] = false;
+      e.preventDefault();
+      return;
+    }
+
+    // Enter opens chat (UI listens via onChatOpen)
+    if (down && !cmdMode && (e.code === 'Enter' || e.key === 'Enter') && !e.ctrlKey && !e.metaKey) {
+      for (const fn of chatOpenListeners) {
+        try { fn(); } catch { /* ignore */ }
+      }
       e.preventDefault();
       return;
     }
@@ -166,6 +176,7 @@ export function createInput() {
       return lookMode;
     },
     onCommand(fn) { cmdListeners.push(fn); },
+    onChatOpen(fn) { chatOpenListeners.push(fn); },
     requestLock() {
       if (cmdMode) return;
       // In Roblox mode, pointer lock is grabbed when RMB is held
