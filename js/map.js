@@ -6,6 +6,12 @@ import {
   makeAsphaltTexture,
   makePanelNormalMap,
 } from './textures.js';
+import {
+  buildDustfallMap,
+  buildFrostbiteMap,
+  buildBlacksiteMap,
+  THEATER_SPAWNS,
+} from './mapTheaters.js';
 
 const MAP_SIZE = 120;
 
@@ -136,6 +142,14 @@ export function createMap(scene, mapId = 'ironfront', quality = null) {
   })[mapId] || 'harbor';
   const theme = THEMES[themeKey];
   const q = quality || { low: false, waterSeg: 64, landStep: 2.5, propDensity: 1, flatLand: false, animateWater: true, detailMeshes: true };
+
+  if (mapId === 'dustfall') return buildDustfallMap(scene, theme, q);
+  if (mapId === 'frostbite') return buildFrostbiteMap(scene, theme, q);
+  if (mapId === 'blacksite') return buildBlacksiteMap(scene, theme, q);
+  return createIronfrontMap(scene, theme, q, mapId);
+}
+
+function createIronfrontMap(scene, theme, q, mapId = 'ironfront') {
 
   const group = new THREE.Group();
   scene.add(group);
@@ -557,6 +571,8 @@ export function createMap(scene, mapId = 'ironfront', quality = null) {
     mapId,
     theme,
     quality: q,
+    layout: 'harbor',
+    minimap: { land: [-40, -35, 70, 55], waterTint: '#2a7aa0', landTint: '#4a6a40' },
     colliders: covers.map(([x, y, z, w, h, d]) => ({
       min: new THREE.Vector3(x - w / 2, 0, z - d / 2),
       max: new THREE.Vector3(x + w / 2, h * 2, z + d / 2),
@@ -1013,7 +1029,12 @@ function scatterProps(group, mats) {
   }
 }
 
-export function getSpawns(team) {
+export function getSpawns(team, mapId = 'ironfront') {
+  const theater = THEATER_SPAWNS[mapId];
+  if (theater) {
+    return team === 'raiders' ? theater.raiders : theater.sentinels;
+  }
+  // Ironfront Harbor defaults
   if (team === 'raiders') {
     return [
       { x: -8, y: 1.0, z: -32, yaw: 0 },
