@@ -248,3 +248,31 @@ export function defaultPassNeed(count) {
   if (count <= 3) return Math.max(2, count - 1);
   return Math.max(3, Math.ceil(count * 0.8)); // 5 → 4
 }
+
+const SKIP_KEY = 'vehicle_strike_no_questions';
+
+/** When true, Catholic Trivia gates auto-pass. */
+export function isTriviaSkipped() {
+  try {
+    return localStorage.getItem(SKIP_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function setTriviaSkipped(on) {
+  const next = !!on;
+  try {
+    if (next) localStorage.setItem(SKIP_KEY, '1');
+    else localStorage.removeItem(SKIP_KEY);
+  } catch {
+    /* ignore */
+  }
+  return next;
+}
+
+/** Toggle skip mode. Returns the new skipped state. */
+export function toggleTriviaSkipped() {
+  return setTriviaSkipped(!isTriviaSkipped());
+}
+

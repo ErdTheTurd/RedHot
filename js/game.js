@@ -16,6 +16,7 @@ import {
 } from './vfx.js';
 import { MODES } from './progression.js';
 import { resolveQuality } from './graphics.js';
+import { toggleTriviaSkipped } from './trivia.js';
 
 export class Game {
   constructor({ scene, camera, input, ui, inventory, lighting = null, quality = null, onQualityChange = null, net = null }) {
@@ -1412,7 +1413,20 @@ export class Game {
       return;
     }
 
-    this.ui.toast(`Unknown command: ${cmd} — try /give-tokens or /give-xp`);
+    if (cmd === '/no-questions' || cmd === '/noquestions' || cmd === '/no-trivia') {
+      const skipped = toggleTriviaSkipped();
+      this.ui.toast(
+        skipped
+          ? 'Trivia off — type /no-questions again to restore questions'
+          : 'Trivia on — deploy, buys, and reloads ask again'
+      );
+      SFX.ui();
+      return;
+    }
+
+    this.ui.toast(
+      `Unknown command: ${cmd} — try /give-tokens, /give-xp, or /no-questions`
+    );
   }
 
   deploySmoke(unit) {

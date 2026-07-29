@@ -11,7 +11,7 @@ import {
 } from './progression.js';
 import { MAX_ADS_PER_DAY } from './ads.js';
 import { getGraphicsPreset, setGraphicsPreset } from './graphics.js';
-import { pickTriviaQuestions, defaultPassNeed } from './trivia.js';
+import { pickTriviaQuestions, defaultPassNeed, isTriviaSkipped } from './trivia.js';
 import {
   hasAccount, getAccount, isLoggedIn, createAccount, loginAccount,
 } from './account.js';
@@ -517,6 +517,7 @@ export function createUI(game, inventory, opts = {}) {
     kicker = 'CATHOLIC TRIVIA',
     cancellable = true,
   } = {}) {
+    if (isTriviaSkipped()) return Promise.resolve(true);
     if (triviaBusy) return Promise.resolve(false);
     const questions = pickTriviaQuestions(count);
     const need = passNeed ?? defaultPassNeed(questions.length);
