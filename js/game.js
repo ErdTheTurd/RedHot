@@ -17,7 +17,17 @@ import {
 import { MODES } from './progression.js';
 import { resolveQuality } from './graphics.js';
 import { toggleTriviaSkipped } from './trivia.js';
-import { isLucky, toggleLucky, pickBestByRarity } from './lucky.js';
+import {
+  isLucky,
+  isSemiLucky,
+  toggleLucky,
+  activateSemiLucky,
+  clearSemiLucky,
+  semiLuckyRemainingLabel,
+  luckTier,
+  pickBestByRarity,
+  pickSemiLuckyByRarity,
+} from './lucky.js';
 
 export class Game {
   constructor({ scene, camera, input, ui, inventory, lighting = null, quality = null, onQualityChange = null, net = null }) {
@@ -36,6 +46,7 @@ export class Game {
     this.buyVotes = {};
     this._netAcc = 0;
     this._seenEvents = new Set();
+    this._semiLuckyWasOn = isSemiLucky();
     this.mapId = 'ironfront';
     this.modeId = 'strike';
     this.mode = MODES.strike;
@@ -273,6 +284,8 @@ export class Game {
     if (isLucky()) {
       this.inventory?.applyLuckyBlessing?.();
       this.applyLuckyToPlayer();
+    } else if (isSemiLucky()) {
+      this.applySemiLuckyToPlayer();
     }
     this._wireNetHandlers();
   }
@@ -345,12 +358,23 @@ export class Game {
       }
     }
     if (typeof s.x === 'number') {
-      u.mesh.position.x += (s.x - u.mesh.position.x) * lerp;
-      u.mesh.position.y += (s.y - u.mesh.position.y) * lerp;
-      u.mesh.position.z += (s.z - u.mesh.position.z) * lerp;
+      const dx = s.x - u.mesh.position.x;
+      const dy = (s.y ?? u.mesh.position.y) - u.mesh.position.y;
+      const dz = s.z - u.mesh.position.z;
+      // Snap if far behind so remotes don't look "missing" after lag spikes
+      if (Math.hypot(dx, dy, dz) > 12) {
+        u.mesh.position.set(s.x, s.y ?? u.mesh.position.y, s.z);
+      } else {
+        u.mesh.position.x += dx * lerp;
+        u.mesh.position.y += dy * lerp;
+        u.mesh.position.z += dz * lerp;
+      }
     }
     u.mesh.rotation.y = u.yaw;
-    u.mesh.visible = !!u.alive;
+    u.mesh.visible = u.alive !== false;
+    if (u.mesh.visible === false && s.alive !== false && typeof s.alive === 'undefined') {
+      u.mesh.visible = true;
+    }
   }
 
   _onNetUnit(data) {
@@ -975,15 +999,21 @@ export class Game {
     if (unit.fireCooldown > 0 || unit.reloadT > 0) return;
     const def = unit.vehicle;
     const ammo = unit.ammo[def.id];
-    const luckyShot = !!(unit.isPlayer && isLucky());
+    const tier = unit.isPlayer ? luckTier() : null;
+    const luckyShot = tier === 'lucky';
+    const semiShot = tier === 'semi';
     if (!ammo || ammo.mag <= 0) {
       this.startReload(unit);
       return;
     }
     if (!luckyShot) ammo.mag -= 1;
     else ammo.mag = unit.magSizeFor?.(def.id) || def.magSize;
-    unit.fireCooldown = luckyShot ? 1 / (def.fireRate * 2.5) : 1 / def.fireRate;
-    unit.recoil = luckyShot ? 0 : Math.min(0.2, unit.recoil + def.recoil);
+    unit.fireCooldown = luckyShot
+      ? 1 / (def.fireRate * 2.5)
+      : semiShot
+        ? 1 / (def.fireRate * 1.35)
+        : 1 / def.fireRate;
+    unit.recoil = luckyShot ? 0 : Math.min(0.2, unit.recoil + def.recoil * (semiShot ? 0.45 : 1));
 
     const heavy = def.category === 'heavy';
     const origin = unit.mesh.position.clone();
@@ -1013,7 +1043,8 @@ export class Game {
     }
     if (!dir) {
       const spreadMul = unit.accMods?.spreadMult || 1;
-      const spread = luckyShot ? 0 : (def.spread + unit.recoil) * spreadMul;
+      const baseSpread = (def.spread + unit.recoil) * spreadMul;
+      const spread = luckyShot ? 0 : semiShot ? baseSpread * 0.35 : baseSpread;
       const yaw = unit.yaw + (Math.random() - 0.5) * spread * 2;
       // Match look aim: positive pitch aims upward (do not invert for the player)
       const pitch = (unit.pitch || 0) + (Math.random() - 0.5) * spread;
@@ -1032,21 +1063,26 @@ export class Game {
     const muzzle = spawnMuzzleFlash(this.scene, origin, dir, heavy);
     this.effects.push({ isMuzzle: true, ...muzzle });
 
-    const dmgMul = (1 + (unit.matchMods?.damageBonus || 0)) * (luckyShot ? 8 : 1);
-    const penBonus = (unit.matchMods?.armorPenBonus || 0) + (luckyShot ? 0.9 : 0);
+    const luckDmg = luckyShot ? 8 : semiShot ? 2 : 1;
+    const dmgMul = (1 + (unit.matchMods?.damageBonus || 0)) * luckDmg;
+    const penBonus = (unit.matchMods?.armorPenBonus || 0) + (luckyShot ? 0.9 : semiShot ? 0.25 : 0);
     const flightLife = Math.min(5, def.range / (heavy ? 75 : 110));
     this.projectiles.push({
       kind: 'gun',
       pos: origin,
       dir,
-      speed: luckyShot ? (heavy ? 110 : 160) : (heavy ? 75 : 110),
+      speed: luckyShot
+        ? (heavy ? 110 : 160)
+        : semiShot
+          ? (heavy ? 90 : 130)
+          : (heavy ? 75 : 110),
       life: flightLife,
       damage: def.damage * dmgMul,
       pen: Math.min(1.2, def.armorPen + penBonus),
       owner: unit,
       heavy,
       mesh,
-      radius: luckyShot ? 7.5 : undefined,
+      radius: luckyShot ? 7.5 : semiShot ? 3.2 : undefined,
       lucky: luckyShot,
     });
 
@@ -1144,12 +1180,19 @@ export class Game {
     const ammo = unit.ammo[def.id];
     if (!ammo || unit.reloadT > 0) return;
     const magSize = unit.magSizeFor?.(def.id) || def.magSize;
-    if (ammo.mag >= magSize || (ammo.reserve <= 0 && !(unit.isPlayer && isLucky()))) return;
+    if (ammo.mag >= magSize || (ammo.reserve <= 0 && !(unit.isPlayer && (isLucky() || isSemiLucky())))) return;
 
     if (unit.isPlayer && isLucky()) {
       ammo.reserve = Math.max(ammo.reserve, 999);
       ammo.mag = magSize;
       this.ui.toast?.('Lucky reload', 700);
+      return;
+    }
+    if (unit.isPlayer && isSemiLucky()) {
+      ammo.reserve = Math.max(ammo.reserve, magSize * 2);
+      // Still takes a short chamber time — not instant like /lucky
+      unit.reloadT = Math.max(0.15, (unit.vehicle.reload || 1) * 0.35);
+      this.ui.toast?.('Semi-lucky reload', 700);
       return;
     }
 
@@ -1481,8 +1524,21 @@ export class Game {
       return;
     }
 
+    if (cmd === '/semi-lucky' || cmd === '/semilucky' || cmd === '/semi') {
+      activateSemiLucky();
+      this.inventory?.applySemiLuckyBlessing?.();
+      this.applySemiLuckyToPlayer?.();
+      this.ui.refreshMeta?.();
+      this._semiLuckyWasOn = true;
+      this.ui.toast(
+        `SEMI-LUCKY ON for 10 min (${semiLuckyRemainingLabel()} left) — ×2 dmg, armor, tighter aim, better crates. Weaker than /lucky.`
+      );
+      SFX.buy();
+      return;
+    }
+
     this.ui.toast(
-      `Unknown command: ${cmd} — try /give-tokens, /give-xp, /no-questions, or /lucky`
+      `Unknown command: ${cmd} — try /give-tokens, /give-xp, /no-questions, /lucky, or /semi-lucky`
     );
   }
 
@@ -1513,6 +1569,60 @@ export class Game {
     p._refillOrdnance?.();
     this.placeDomainVehicle?.(p);
     this.ui.renderBuy?.();
+  }
+
+  /** Modest in-match buffs for /semi-lucky (not full god mode). */
+  applySemiLuckyToPlayer() {
+    const p = this.player;
+    if (!p || !isSemiLucky()) return;
+    p.money = Math.min(MAX_MONEY, Math.max(p.money, 8000));
+    p.hp = Math.max(p.hp, 100);
+    p.armor = Math.max(p.armor, 70);
+    p.alive = true;
+    p.dying = false;
+    const byDomain = { land: null, sea: null, air: null };
+    for (const domain of ['land', 'sea', 'air']) {
+      const pool = Object.values(VEHICLES).filter((v) => v.domain === domain);
+      byDomain[domain] = pickSemiLuckyByRarity(pool, (v) => v.rarity || 'milspec');
+    }
+    p.loadout = [
+      byDomain.land?.id || p.loadout[0],
+      byDomain.sea?.id || p.loadout[1],
+      byDomain.air?.id || p.loadout[2],
+    ];
+    for (const id of p.loadout) {
+      if (id) {
+        this.inventory?.unlockVehicle?.(id);
+        p._ensureAmmo?.(id);
+        const ammo = p.ammo?.[id];
+        if (ammo) {
+          const mag = p.magSizeFor?.(id) || 30;
+          ammo.mag = mag;
+          ammo.reserve = Math.max(ammo.reserve || 0, mag * 4);
+        }
+      }
+    }
+    p.activeSlot = 0;
+    p._swapMesh?.();
+    p._refillOrdnance?.();
+    if (typeof p.bombs === 'number') p.bombs = Math.max(p.bombs, 4);
+    if (typeof p.torpedoes === 'number') p.torpedoes = Math.max(p.torpedoes, 3);
+    this.placeDomainVehicle?.(p);
+    this.ui.renderBuy?.();
+  }
+
+  /** Toast when the 10-minute semi-lucky window ends. */
+  tickSemiLuckyExpiry() {
+    const on = isSemiLucky();
+    if (on) {
+      this._semiLuckyWasOn = true;
+      return;
+    }
+    if (this._semiLuckyWasOn) {
+      this._semiLuckyWasOn = false;
+      clearSemiLucky();
+      this.ui.toast?.('Semi-lucky expired — back to normal');
+    }
   }
 
   deploySmoke(unit) {
@@ -1853,6 +1963,7 @@ export class Game {
     }
 
     this.updatePlayer(dt);
+    this.tickSemiLuckyExpiry();
     for (const u of this.units) {
       if (u.isPlayer || u.isRemote) continue;
       if (this.netEnabled && !this.isNetHost) continue;

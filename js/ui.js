@@ -235,7 +235,8 @@ export function createUI(game, inventory, opts = {}) {
       mmRoster[team] = mmRoster[team].map((slot) => {
         if (slot.kind === 'you') return slot;
         if (slot.kind === 'human') {
-          return keepHumans
+          // Only keep real networked operators — theatrical “humans” have no clientId
+          return keepHumans && slot.clientId
             ? slot
             : { name: slot.name, kind: 'ai', clientId: null };
         }

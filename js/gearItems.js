@@ -1,6 +1,6 @@
 /** Warheads (ordnance) + Accessories crate catalog */
 
-import { isLucky, pickBestByRarity } from './lucky.js';
+import { isLucky, isSemiLucky, pickBestByRarity, pickSemiLuckyByRarity } from './lucky.js';
 
 const RARITY_WEIGHT = {
   consumer: 79.92,
@@ -285,6 +285,9 @@ export function rollItemFromPool(pool, weightBoost = {}) {
   if (!pool?.length) return null;
   if (isLucky()) {
     return pickBestByRarity(pool, (x) => x.rarity);
+  }
+  if (isSemiLucky()) {
+    return pickSemiLuckyByRarity(pool, (x) => x.rarity);
   }
   const weighted = pool.map((item) => ({
     item,

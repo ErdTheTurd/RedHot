@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { VEHICLES } from './config.js';
 import { createVehicleMesh } from './models.js';
-import { isLucky } from './lucky.js';
+import { isLucky, isSemiLucky } from './lucky.js';
 
 export { createVehicleMesh };
 
@@ -392,6 +392,8 @@ export class Unit {
     }
     this.lastAttacker = attacker;
     let dmg = amount;
+    // Semi-lucky: ~60% damage reduction (still killable)
+    if (this.isPlayer && isSemiLucky()) dmg *= 0.4;
     if (this.armor > 0) {
       const absorbed = Math.min(this.armor, dmg * (1 - Math.min(1, armorPen) * 0.5));
       this.armor -= absorbed;

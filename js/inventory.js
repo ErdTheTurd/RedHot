@@ -5,7 +5,7 @@ import { CASES, KEYS, SKINS, rollVehicleFromCase, rollItemFromCase, defaultSkinI
 import { GEAR_ITEMS } from './gearItems.js';
 import { awardXp, levelFromXp } from './progression.js';
 import { normalizeAdsState, canWatchAd, showRewardedAd, adsRemaining, MAX_ADS_PER_DAY } from './ads.js';
-import { isLucky, pickBestByRarity, rarityRank } from './lucky.js';
+import { isLucky, isSemiLucky, pickBestByRarity, pickSemiLuckyByRarity, rarityRank } from './lucky.js';
 
 const STORAGE_KEY = 'vehicle_strike_inventory_v3';
 const LEGACY_KEYS = ['vehicle_strike_inventory_v2', 'vehicle_strike_inventory_v1'];
@@ -350,6 +350,38 @@ export class InventoryService {
       if (!cur || cur.isDefault || rarityRank(best.rarity) >= rarityRank(cur.rarity)) {
         this.data.equipped[v.id] = best.id;
       }
+    }
+    this.persist();
+    return true;
+  }
+
+  /** Modest stash when /semi-lucky turns on — good, not god-tier. */
+  applySemiLuckyBlessing() {
+    this.data.wallet = Math.max(this.data.wallet, 25000);
+    const caseIds = Object.keys(CASES);
+    const keyIds = Object.keys(KEYS);
+    for (const id of caseIds.slice(0, Math.min(4, caseIds.length))) {
+      this.data.cases[id] = Math.max(this.data.cases[id] || 0, 3);
+    }
+    for (const id of keyIds.slice(0, Math.min(4, keyIds.length))) {
+      this.data.keys[id] = Math.max(this.data.keys[id] || 0, 3);
+    }
+    // Unlock a solid (not always best) craft per domain
+    for (const domain of ['land', 'sea', 'air']) {
+      const pool = Object.values(VEHICLES).filter((v) => v.domain === domain);
+      const pick = pickSemiLuckyByRarity(pool, (v) => v.rarity || 'milspec');
+      if (pick) {
+        this.data.ownedVehicles[pick.id] = true;
+        this.data.equippedFleet[domain] = pick.id;
+      }
+    }
+    // A few mid-tier warheads / accessories
+    const gear = Object.values(GEAR_ITEMS);
+    for (let i = 0; i < 4 && gear.length; i += 1) {
+      const item = pickSemiLuckyByRarity(gear, (x) => x.rarity);
+      if (!item) break;
+      if (item.type === 'accessory') this.data.accessories[item.id] = true;
+      else this.data.items[item.id] = Math.max(this.data.items[item.id] || 0, 2);
     }
     this.persist();
     return true;
