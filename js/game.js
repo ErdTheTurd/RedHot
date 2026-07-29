@@ -17,6 +17,7 @@ import {
 import { MODES } from './progression.js';
 import { resolveQuality } from './graphics.js';
 import { toggleTriviaSkipped } from './trivia.js';
+import { isLucky, toggleLucky, pickBestByRarity } from './lucky.js';
 
 export class Game {
   constructor({ scene, camera, input, ui, inventory, lighting = null, quality = null, onQualityChange = null, net = null }) {
@@ -267,6 +268,10 @@ export class Game {
     this.beginRound();
     // After first round reset so consumable bombs/mags aren't wiped by refill
     this.applyPlayerGear();
+    if (isLucky()) {
+      this.inventory?.applyLuckyBlessing?.();
+      this.applyLuckyToPlayer();
+    }
     this._wireNetHandlers();
   }
 
@@ -968,13 +973,15 @@ export class Game {
     if (unit.fireCooldown > 0 || unit.reloadT > 0) return;
     const def = unit.vehicle;
     const ammo = unit.ammo[def.id];
+    const luckyShot = !!(unit.isPlayer && isLucky());
     if (!ammo || ammo.mag <= 0) {
       this.startReload(unit);
       return;
     }
-    ammo.mag -= 1;
-    unit.fireCooldown = 1 / def.fireRate;
-    unit.recoil = Math.min(0.2, unit.recoil + def.recoil);
+    if (!luckyShot) ammo.mag -= 1;
+    else ammo.mag = unit.magSizeFor?.(def.id) || def.magSize;
+    unit.fireCooldown = luckyShot ? 1 / (def.fireRate * 2.5) : 1 / def.fireRate;
+    unit.recoil = luckyShot ? 0 : Math.min(0.2, unit.recoil + def.recoil);
 
     const heavy = def.category === 'heavy';
     const origin = unit.mesh.position.clone();
@@ -983,16 +990,37 @@ export class Game {
     origin.x += Math.sin(unit.yaw) * (def.domain === 'air' ? 2.2 : 3.2);
     origin.z += Math.cos(unit.yaw) * (def.domain === 'air' ? 2.2 : 3.2);
 
-    const spreadMul = unit.accMods?.spreadMult || 1;
-    const spread = (def.spread + unit.recoil) * spreadMul;
-    const yaw = unit.yaw + (Math.random() - 0.5) * spread * 2;
-    // Match look aim: positive pitch aims upward (do not invert for the player)
-    const pitch = (unit.pitch || 0) + (Math.random() - 0.5) * spread;
-    const dir = new THREE.Vector3(
-      Math.sin(yaw) * Math.cos(pitch),
-      Math.sin(pitch),
-      Math.cos(yaw) * Math.cos(pitch)
-    ).normalize();
+    let dir = null;
+    if (luckyShot) {
+      let best = null;
+      let bestD = Infinity;
+      for (const u of this.units) {
+        if (!u.alive || u === unit) continue;
+        if (this.mode?.teams && u.team === unit.team) continue;
+        const d = origin.distanceTo(u.mesh.position);
+        if (d < bestD && d < (def.range || 80) * 1.35) {
+          bestD = d;
+          best = u;
+        }
+      }
+      if (best) {
+        const aim = best.mesh.position.clone();
+        aim.y += 1.1;
+        dir = aim.sub(origin).normalize();
+      }
+    }
+    if (!dir) {
+      const spreadMul = unit.accMods?.spreadMult || 1;
+      const spread = luckyShot ? 0 : (def.spread + unit.recoil) * spreadMul;
+      const yaw = unit.yaw + (Math.random() - 0.5) * spread * 2;
+      // Match look aim: positive pitch aims upward (do not invert for the player)
+      const pitch = (unit.pitch || 0) + (Math.random() - 0.5) * spread;
+      dir = new THREE.Vector3(
+        Math.sin(yaw) * Math.cos(pitch),
+        Math.sin(pitch),
+        Math.cos(yaw) * Math.cos(pitch)
+      ).normalize();
+    }
 
     const mesh = createProjectileMesh(heavy);
     mesh.position.copy(origin);
@@ -1002,20 +1030,22 @@ export class Game {
     const muzzle = spawnMuzzleFlash(this.scene, origin, dir, heavy);
     this.effects.push({ isMuzzle: true, ...muzzle });
 
-    const dmgMul = 1 + (unit.matchMods?.damageBonus || 0);
-    const penBonus = unit.matchMods?.armorPenBonus || 0;
+    const dmgMul = (1 + (unit.matchMods?.damageBonus || 0)) * (luckyShot ? 8 : 1);
+    const penBonus = (unit.matchMods?.armorPenBonus || 0) + (luckyShot ? 0.9 : 0);
     const flightLife = Math.min(5, def.range / (heavy ? 75 : 110));
     this.projectiles.push({
       kind: 'gun',
       pos: origin,
       dir,
-      speed: heavy ? 75 : 110,
+      speed: luckyShot ? (heavy ? 110 : 160) : (heavy ? 75 : 110),
       life: flightLife,
       damage: def.damage * dmgMul,
-      pen: def.armorPen + penBonus,
+      pen: Math.min(1.2, def.armorPen + penBonus),
       owner: unit,
       heavy,
       mesh,
+      radius: luckyShot ? 7.5 : undefined,
+      lucky: luckyShot,
     });
 
     if (unit.isPlayer) {
@@ -1035,9 +1065,11 @@ export class Game {
       return;
     }
     if (unit.secondaryCooldown > 0) return;
-    unit.bombs -= 1;
-    unit._recentOrdnanceSpend = performance.now();
-    unit._stashOrdnance?.();
+    if (!(unit.isPlayer && isLucky())) {
+      unit.bombs -= 1;
+      unit._recentOrdnanceSpend = performance.now();
+      unit._stashOrdnance?.();
+    }
     unit.secondaryCooldown = 0.55;
     const origin = unit.mesh.position.clone();
     origin.y -= 0.8;
@@ -1073,9 +1105,11 @@ export class Game {
       return;
     }
     if (unit.secondaryCooldown > 0) return;
-    unit.torpedoes -= 1;
-    unit._recentOrdnanceSpend = performance.now();
-    unit._stashOrdnance?.();
+    if (!(unit.isPlayer && isLucky())) {
+      unit.torpedoes -= 1;
+      unit._recentOrdnanceSpend = performance.now();
+      unit._stashOrdnance?.();
+    }
     unit.secondaryCooldown = 0.85;
     const dir = new THREE.Vector3(Math.sin(unit.yaw), 0, Math.cos(unit.yaw)).normalize();
     const origin = unit.mesh.position.clone().addScaledVector(dir, 3.5);
@@ -1424,9 +1458,52 @@ export class Game {
       return;
     }
 
+    if (cmd === '/lucky' || cmd === '/god' || cmd === '/op') {
+      const on = toggleLucky();
+      if (on) {
+        this.inventory?.applyLuckyBlessing?.();
+        this.applyLuckyToPlayer?.();
+        this.ui.refreshMeta?.();
+        this.ui.toast('LUCKY ON — aimbot, immortality, ∞ crates, best drops. /lucky again to cancel');
+      } else {
+        this.ui.toast('Lucky off — back to mortal rules');
+      }
+      SFX.buy();
+      return;
+    }
+
     this.ui.toast(
-      `Unknown command: ${cmd} — try /give-tokens, /give-xp, or /no-questions`
+      `Unknown command: ${cmd} — try /give-tokens, /give-xp, /no-questions, or /lucky`
     );
+  }
+
+  applyLuckyToPlayer() {
+    const p = this.player;
+    if (!p || !isLucky()) return;
+    p.money = MAX_MONEY;
+    p.hp = 100;
+    p.armor = 100;
+    p.alive = true;
+    p.dying = false;
+    // Unlock best fleet into loadout
+    const byDomain = { land: null, sea: null, air: null };
+    for (const domain of ['land', 'sea', 'air']) {
+      const pool = Object.values(VEHICLES).filter((v) => v.domain === domain);
+      byDomain[domain] = pickBestByRarity(pool, (v) => v.rarity || 'milspec');
+    }
+    p.loadout = [
+      byDomain.land?.id || p.loadout[0],
+      byDomain.sea?.id || p.loadout[1],
+      byDomain.air?.id || p.loadout[2],
+    ];
+    for (const id of p.loadout) {
+      if (id) p._ensureAmmo?.(id);
+    }
+    p.activeSlot = 0;
+    p._swapMesh?.();
+    p._refillOrdnance?.();
+    this.placeDomainVehicle?.(p);
+    this.ui.renderBuy?.();
   }
 
   deploySmoke(unit) {
