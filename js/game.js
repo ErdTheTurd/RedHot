@@ -13,6 +13,7 @@ import {
   orientProjectile, spawnMuzzleFlash, spawnImpact,
   spawnExplosion, spawnSmokeCloud, spawnEmpBurst, updateVfxList,
   attachDeathFire, updateDeathFire,
+  spawnSplash, spawnTransformBurst,
 } from './vfx.js';
 import { MODES } from './progression.js';
 import { resolveQuality } from './graphics.js';
@@ -346,10 +347,13 @@ export class Game {
       yaw: u.yaw,
       pitch: u.pitch,
       vehicleId: u.vehicle?.id || u.loadout?.[0],
+      domain: u.vehicle?.domain || null,
+      loadout: Array.isArray(u.loadout) ? [...u.loadout] : null,
       x: u.mesh.position.x,
       y: u.mesh.position.y,
       z: u.mesh.position.z,
       flightAlt: u.flightAlt || 0,
+      transforming: !!u.transformLock,
     };
   }
 
@@ -364,18 +368,31 @@ export class Game {
     if (typeof s.deaths === 'number') u.deaths = s.deaths;
     if (typeof s.alive === 'boolean') u.alive = s.alive;
     if (typeof s.flightAlt === 'number') u.flightAlt = s.flightAlt;
-    if (s.vehicleId && u.vehicle?.id !== s.vehicleId && u.loadout) {
-      const idx = u.loadout.indexOf(s.vehicleId);
-      if (idx >= 0) {
-        u.activeSlot = idx;
-        u._swapMesh?.();
+
+    // Remotes often only have scout_tracker in loadout — force the networked craft
+    if (s.vehicleId && u.vehicle?.id !== s.vehicleId && !u.transformLock) {
+      if (Array.isArray(s.loadout)) {
+        for (let i = 0; i < 3; i++) {
+          if (s.loadout[i]) {
+            u.loadout[i] = s.loadout[i];
+            u._ensureAmmo?.(s.loadout[i]);
+          }
+        }
       }
+      u.forceVehicle?.(s.vehicleId, { animate: !!u.isRemote, remote: !!u.isRemote });
     }
+
+    // Don't fight the transform animation on position
+    if (u.transformLock) {
+      u.mesh.rotation.y = u.yaw;
+      u.mesh.visible = u.alive !== false;
+      return;
+    }
+
     if (typeof s.x === 'number') {
       const dx = s.x - u.mesh.position.x;
       const dy = (s.y ?? u.mesh.position.y) - u.mesh.position.y;
       const dz = s.z - u.mesh.position.z;
-      // Snap if far behind so remotes don't look "missing" after lag spikes
       if (Math.hypot(dx, dy, dz) > 12) {
         u.mesh.position.set(s.x, s.y ?? u.mesh.position.y, s.z);
       } else {
@@ -417,23 +434,38 @@ export class Game {
     const known = (this.netHumans || []).find((h) => h.clientId === data.clientId);
     const team = data.team || known?.team || TEAMS.RAIDERS;
     const name = data.name || known?.username || 'Operator';
-    const spawns = getSpawns(team === TEAMS.SENTINELS ? 'sentinels' : 'raiders');
+    const spawns = getSpawns(
+      team === TEAMS.SENTINELS ? 'sentinels' : 'raiders',
+      this.mapId
+    );
     const spawn = spawns[Math.floor(Math.random() * spawns.length)] || spawns[0];
     const groundY = (x, z) => this.map.groundHeight(x, z);
+    const vid = data.vehicleId && VEHICLES[data.vehicleId] ? data.vehicleId : 'scout_tracker';
     const u = new Unit({
       id: `h_${String(data.clientId).slice(0, 8)}`,
       name,
       team,
       spawn,
-      vehicleId: data.vehicleId || 'scout_tracker',
+      vehicleId: vid,
       getGroundY: groundY,
     });
     u.money = START_MONEY;
     u.netId = data.clientId;
     u.isRemote = true;
+    if (Array.isArray(data.loadout)) {
+      for (let i = 0; i < 3; i++) {
+        if (data.loadout[i] && VEHICLES[data.loadout[i]]) {
+          u.loadout[i] = data.loadout[i];
+          u._ensureAmmo(data.loadout[i]);
+        }
+      }
+      const idx = u.loadout.indexOf(vid);
+      if (idx >= 0) u.activeSlot = idx;
+    }
     u.mesh.visible = true;
     this.scene.add(u.mesh);
     this.units.push(u);
+    this.placeDomainVehicle(u);
     if (!known) {
       this.netHumans = this.netHumans || [];
       this.netHumans.push({ clientId: data.clientId, username: name, team });
@@ -943,18 +975,74 @@ export class Game {
         if (sea) {
           unit.mesh.position.x = sea.x;
           unit.mesh.position.z = sea.z;
-          this.ui.toast('Ship deployed to open water');
+          if (unit.isPlayer) this.ui.toast('Ship deployed to open water');
         }
       }
       unit.mesh.position.y = 0.2;
       unit.grounded = true;
       unit.vy = 0;
     } else if (d === 'air') {
-      unit.mesh.position.y = 8;
+      if (!unit.flightAlt) unit.flightAlt = 8;
+      unit.mesh.position.y = unit.flightAlt;
       unit.grounded = true;
       unit.vy = 0;
     } else {
       unit._adjustHeight?.();
+    }
+  }
+
+  /** Tick transformer morphs for local + remote units. */
+  updateVehicleTransforms(dt) {
+    for (const u of this.units) {
+      if (!u.transform) continue;
+      const helpers = {};
+      const kind = u.transform.kind;
+      if (kind === 'splash' || kind === 'roll') {
+        const sea = this.map?.nearestWater?.(u.transform.startX, u.transform.startZ);
+        if (sea) helpers.seaTarget = sea;
+      }
+      if (kind === 'beach') {
+        // Nudge inland from current water spot
+        helpers.landTarget = {
+          x: u.transform.startX + Math.sin(u.yaw || 0) * 6,
+          z: u.transform.startZ + Math.cos(u.yaw || 0) * 6,
+        };
+      }
+      const result = u.updateVehicleTransform(dt, helpers);
+      if (!result) continue;
+
+      if (result.justSwapped) {
+        this.effects.push(spawnTransformBurst(this.scene, u.mesh.position.clone()));
+        SFX.ui();
+      }
+      if (result.fx === 'splash') {
+        const p = u.mesh.position.clone();
+        p.y = 0.3;
+        this.effects.push(spawnSplash(this.scene, p, 1.15));
+        SFX.hit();
+      } else if (result.fx === 'impact') {
+        this.effects.push(spawnImpact(this.scene, u.mesh.position.clone(), true));
+        SFX.hit();
+      } else if (result.fx === 'thrust') {
+        this.effects.push(spawnSmokeCloud(this.scene, u.mesh.position.clone().add(new THREE.Vector3(0, 0.5, 0))));
+        SFX.fire(false);
+      }
+
+      if (result.done) {
+        this.placeDomainVehicle(u);
+        if (u.isPlayer) {
+          const name = u.vehicle?.name || 'craft';
+          const kindLabel = {
+            drop: 'dropped in',
+            splash: 'splashed down',
+            hover: 'lifted off',
+            roll: 'rolled into the drink',
+            beach: 'beached',
+            morph: 'reformed',
+          }[kind] || 'transformed';
+          this.ui.toast?.(`${name} — ${kindLabel}`, 1200);
+        }
+      }
     }
   }
 
@@ -1405,6 +1493,8 @@ export class Game {
     if (!p || !p.alive) return;
 
     if (this.buyOpen || this.input.cmdMode) return;
+    // Freeze controls while transformer morph plays
+    if (p.transformLock) return;
 
     const { dx, dy } = this.input.consumeMouseDelta();
     const sens = 0.0024;
@@ -2148,6 +2238,7 @@ export class Game {
       }
     }
 
+    this.updateVehicleTransforms(dt);
     this.updatePlayer(dt);
     this.tickSemiLuckyExpiry();
     for (const u of this.units) {
@@ -2196,22 +2287,25 @@ export class Game {
     }
     if (e.code === 'Digit1') {
       if (this.player?.loadout[0] && (!this.inventory || this.inventory.ownsVehicle(this.player.loadout[0]))) {
+        if (this.player.transformLock) return;
         const res = this.player.switchSlot(0);
-        this.placeDomainVehicle(this.player);
+        if (res?.instant) this.placeDomainVehicle(this.player);
         if (res?.niceTry) this.ui.showNiceTry?.();
       }
     }
     if (e.code === 'Digit2') {
       if (this.player?.loadout[1] && (!this.inventory || this.inventory.ownsVehicle(this.player.loadout[1]))) {
+        if (this.player.transformLock) return;
         const res = this.player.switchSlot(1);
-        this.placeDomainVehicle(this.player);
+        if (res?.instant) this.placeDomainVehicle(this.player);
         if (res?.niceTry) this.ui.showNiceTry?.();
       }
     }
     if (e.code === 'Digit3') {
       if (this.player?.loadout[2] && (!this.inventory || this.inventory.ownsVehicle(this.player.loadout[2]))) {
+        if (this.player.transformLock) return;
         const res = this.player.switchSlot(2);
-        this.placeDomainVehicle(this.player);
+        if (res?.instant) this.placeDomainVehicle(this.player);
         if (res?.niceTry) this.ui.showNiceTry?.();
       }
     }

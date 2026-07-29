@@ -392,6 +392,104 @@ export function spawnExplosion(scene, position, scale = 1) {
   return group;
 }
 
+/** Water splash ring + blue spray for jet→ship / tank→ship transforms */
+export function spawnSplash(scene, position, scale = 1) {
+  const group = new THREE.Group();
+  group.position.copy(position);
+  group.userData.life = 0.95;
+  group.userData.maxLife = 0.95;
+  group.userData.isExplosion = true;
+
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.4 * scale, 2.2 * scale, 28),
+    new THREE.MeshBasicMaterial({
+      color: 0xa8e8ff,
+      transparent: true,
+      opacity: 0.85,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.15;
+  ring.userData.expand = 10;
+  group.add(ring);
+
+  for (let i = 0; i < 14; i++) {
+    const drop = new THREE.Mesh(
+      new THREE.SphereGeometry(0.12 + Math.random() * 0.15, 6, 6),
+      new THREE.MeshBasicMaterial({
+        color: 0xc8f0ff,
+        transparent: true,
+        opacity: 0.9,
+      })
+    );
+    const a = (i / 14) * Math.PI * 2;
+    drop.position.set(Math.cos(a) * 0.4, 0.4, Math.sin(a) * 0.4);
+    drop.userData.vel = new THREE.Vector3(
+      Math.cos(a) * (2 + Math.random() * 3),
+      4 + Math.random() * 5,
+      Math.sin(a) * (2 + Math.random() * 3)
+    );
+    group.add(drop);
+  }
+
+  const mist = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map: getSmokeTex(),
+      transparent: true,
+      depthWrite: false,
+      opacity: 0.55,
+      color: 0xb0d8f0,
+    })
+  );
+  mist.scale.set(4 * scale, 4 * scale, 1);
+  mist.position.y = 1.2;
+  mist.userData.expand = 6;
+  group.add(mist);
+
+  scene.add(group);
+  return group;
+}
+
+/** Transformer sparks / energy burst mid-swap */
+export function spawnTransformBurst(scene, position) {
+  const group = new THREE.Group();
+  group.position.copy(position);
+  group.userData.life = 0.55;
+  group.userData.maxLife = 0.55;
+  group.userData.isExplosion = true;
+
+  for (let i = 0; i < 10; i++) {
+    const spark = new THREE.Mesh(
+      new THREE.BoxGeometry(0.08, 0.08, 0.55),
+      new THREE.MeshBasicMaterial({
+        color: i % 2 ? 0xffcc66 : 0x66ddff,
+        transparent: true,
+        opacity: 1,
+      })
+    );
+    const a = Math.random() * Math.PI * 2;
+    const e = 0.4 + Math.random() * 0.8;
+    spark.position.set(0, 1, 0);
+    spark.userData.vel = new THREE.Vector3(
+      Math.cos(a) * (3 + Math.random() * 5),
+      2 + Math.random() * 4,
+      Math.sin(a) * (3 + Math.random() * 5)
+    );
+    spark.rotation.set(Math.random(), Math.random(), Math.random());
+    group.add(spark);
+  }
+
+  const flash = new THREE.PointLight(0xffaa55, 8, 16, 2);
+  flash.position.y = 1.5;
+  flash.userData.fadeLight = true;
+  group.add(flash);
+
+  scene.add(group);
+  return group;
+}
+
 /** Billboard smoke barrage cloud */
 export function spawnSmokeCloud(scene, position) {
   const group = new THREE.Group();
