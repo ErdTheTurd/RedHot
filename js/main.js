@@ -194,6 +194,9 @@ async function boot() {
     buyVehicle(id) { gameRef.game.buyVehicle(id); },
     buyGear(id) { gameRef.game.buyGear(id); },
     castBuyVote(sec) { gameRef.game?.castBuyVote?.(sec); },
+    handleCommand(line) { gameRef.game?.handleCommand?.(line); },
+    sendChat(text) { return gameRef.game?.sendChat?.(text); },
+    isDev() { return !!gameRef.game?.isDev?.(); },
     setGraphicsQuality(preset) {
       const saved = setGraphicsPreset(preset);
       return gameRef.game.setGraphicsQuality(saved);
@@ -220,7 +223,11 @@ async function boot() {
 
   input.onCommand((line) => {
     game.handleCommand(line);
-    if (game.running && !game.buyOpen) input.requestLock();
+    if (game.running && !game.buyOpen && !ui.isChatOpen?.()) input.requestLock();
+  });
+  input.onChatOpen(() => {
+    if (ui.isChatOpen?.()) return;
+    ui.openChat?.();
   });
 
   const onResize = () => {

@@ -90,13 +90,15 @@
       <div class="menu-hero">
         <p class="brand-mark">VEHICLE STRIKE</p>
         <p class="menu-callsign" id="menu-callsign">OPERATOR</p>
+        <p class="dev-badge hidden" id="dev-badge">DEV ADMIN — match, lobby, cheats, chat</p>
         <h1 class="menu-headline">temporary proof of concept</h1>
-        <p class="menu-sub">Fully playable 3D tactical combat. Earn bank credits, buy tank/ship/jet crates, warheads & accessories, unbox upgrades, equip your loadout. Catholic Trivia gates deploy, reloads, and purchases. When two or more operators are online, team modes share a live matchmaking board.</p>
+        <p class="menu-sub">Fully playable 3D tactical combat. Earn bank credits, buy tank/ship/jet crates, warheads & accessories, unbox upgrades, equip your loadout. Catholic Trivia gates deploy, reloads, and purchases. When two or more operators are online, team modes share a live matchmaking board. Enlist as <strong>DEV</strong> for full admin.</p>
         <div class="menu-cta">
           <button class="btn btn-primary" id="btn-play">DEPLOY</button>
           <button class="btn btn-ghost" id="btn-shop">ARMORY</button>
           <button class="btn btn-ghost" id="btn-inventory">INVENTORY</button>
           <button class="btn btn-ghost" id="btn-howto">BRIEFING</button>
+          <button class="btn btn-ghost" id="btn-become-dev" title="Rename this profile to DEV">BECOME DEV</button>
         </div>
         <label class="look-toggle" id="look-toggle">
           <input type="checkbox" id="chk-roblox-look" />
@@ -146,7 +148,7 @@
           <li><strong>Inventory</strong> — Equip fleet, paints, warheads loadout, and view accessories.</li>
           <li><strong>Water</strong> — River and ocean are one continuous water body. Land vehicles can drive in, but they sink and take damage. Use bridges to cross. Ships stay in water only.</li>
           <li><strong>Graphics</strong> — Ultra is always the default. Check <em>Low poly</em> only if you want lighter meshes (saves GPU); uncheck to rebuild Ultra.</li>
-          <li><strong>Controls</strong> — WASD/arrows (←/→ strafe) · Mouse look by default · Optional <em>Roblox look</em> on the menu (hold RMB to turn) · <em>Shift+↑/↓</em> aim gun vertically · <em>Shift+W/S</em> jet altitude · <em>F gun</em> · <em>B bombs</em> (jets) / buy · <em>T torpedo</em> · <em>X landmine</em> · Space jump · R reload · E plant/defuse · Tab score · 1–3 slots · G smoke · V EMP · <code>/give-tokens</code> · <code>/give-xp</code> · <code>/no-questions</code> (toggle trivia) · <code>/lucky</code> (god mode) · <code>/semi-lucky</code> (10 min buffs, weaker than lucky) · <code>/unlucky</code> (cancel both)</li>
+          <li><strong>Controls</strong> — WASD/arrows (←/→ strafe) · Mouse look by default · Optional <em>Roblox look</em> on the menu (hold RMB to turn) · <em>Shift+↑/↓</em> aim gun vertically · <em>Shift+W/S</em> jet altitude · <em>F gun</em> · <em>B bombs</em> (jets) / buy · <em>T torpedo</em> · <em>X landmine</em> · Space jump · R reload · E plant/defuse · Tab score · 1–3 slots · G smoke · V EMP · <em>Enter</em> chat (emojis) · <code>/give-tokens</code> · <code>/give-xp</code> · <code>/no-questions</code> · <code>/lucky</code> · <code>/semi-lucky</code> · <code>/unlucky</code> · Callsign <code>DEV</code> = full admin</li>
         </ul>
         <button class="btn btn-primary" id="btn-howto-back">RETURN</button>
       </div>
@@ -400,7 +402,20 @@
 
       <div class="hud-slots" id="hud-slots"></div>
       <canvas id="minimap" class="minimap" width="160" height="160"></canvas>
-      <div class="hud-hint" id="hud-hint">WASD/Arrows · Mouse look · Shift+↑/↓ aim · Shift+W/S jet alt · F Gun · B Bomb / Buy · T Torpedo · X Mine · Esc</div>
+      <div class="hud-hint" id="hud-hint">WASD/Arrows · Mouse look · Shift+↑/↓ aim · Shift+W/S jet alt · F Gun · B Bomb / Buy · T Torpedo · X Mine · Enter Chat · Esc</div>
+
+      <div id="chat-panel" class="chat-panel hidden" aria-live="polite">
+        <div class="chat-head">
+          <span>COMMS</span>
+          <button type="button" class="chat-x" id="btn-chat-close" title="Close">×</button>
+        </div>
+        <div id="chat-log" class="chat-log"></div>
+        <div id="chat-emojis" class="chat-emojis" aria-label="Emojis"></div>
+        <div class="chat-compose">
+          <input id="chat-input" type="text" maxlength="180" placeholder="Say something… or /command" autocomplete="off" />
+          <button type="button" class="btn btn-primary btn-chat-send" id="btn-chat-send">SEND</button>
+        </div>
+      </div>
     </section>
 
     <!-- SCOREBOARD -->
