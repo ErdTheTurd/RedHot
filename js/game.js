@@ -20,6 +20,7 @@ import { toggleTriviaSkipped } from './trivia.js';
 import {
   isLucky,
   isSemiLucky,
+  setLucky,
   toggleLucky,
   activateSemiLucky,
   clearSemiLucky,
@@ -1524,6 +1525,16 @@ export class Game {
       return;
     }
 
+    if (cmd === '/unlucky' || cmd === '/unop' || cmd === '/mortal') {
+      setLucky(false);
+      clearSemiLucky();
+      this._semiLuckyWasOn = false;
+      this.ui.refreshMeta?.();
+      this.ui.toast('Unlucky — lucky and semi-lucky both cancelled. Back to mortal rules.');
+      SFX.ui();
+      return;
+    }
+
     if (cmd === '/semi-lucky' || cmd === '/semilucky' || cmd === '/semi') {
       activateSemiLucky();
       this.inventory?.applySemiLuckyBlessing?.();
@@ -1538,7 +1549,7 @@ export class Game {
     }
 
     this.ui.toast(
-      `Unknown command: ${cmd} — try /give-tokens, /give-xp, /no-questions, /lucky, or /semi-lucky`
+      `Unknown command: ${cmd} — try /give-tokens, /give-xp, /no-questions, /lucky, /semi-lucky, or /unlucky`
     );
   }
 
