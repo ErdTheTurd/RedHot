@@ -2,7 +2,7 @@
 
 import { VEHICLES } from './config.js';
 import { warheadsPool, accessoriesPool, rollItemFromPool } from './gearItems.js';
-import { isLucky, pickBestByRarity } from './lucky.js';
+import { isLucky, isSemiLucky, pickBestByRarity, pickSemiLuckyByRarity } from './lucky.js';
 
 export const RARITY = {
   consumer: { id: 'consumer', label: 'Consumer Grade', color: '#b0c3d9', weight: 79.92 },
@@ -264,6 +264,9 @@ export function rollVehicleFromCase(caseId) {
 
   if (isLucky()) {
     return pickBestByRarity(pool, (v) => v.rarity || 'milspec');
+  }
+  if (isSemiLucky()) {
+    return pickSemiLuckyByRarity(pool, (v) => v.rarity || 'milspec');
   }
 
   const boost = crate.weightBoost || {};
