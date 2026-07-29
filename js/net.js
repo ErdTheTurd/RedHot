@@ -237,9 +237,15 @@ export class NetClient {
     });
   }
 
-  leaveLobby() {
+  /** Drop lobby subscription/state without touching an active match. */
+  clearLobby() {
     this.lobbyId = null;
     this.isLobbyHost = false;
+    this._resubscribe();
+  }
+
+  leaveLobby() {
+    this.clearLobby();
     this.matchId = null;
     this.isMatchHost = false;
     this.setStatus('menu', {});
@@ -248,11 +254,14 @@ export class NetClient {
   attachMatch(matchId, isHost) {
     this.matchId = matchId;
     this.isMatchHost = !!isHost;
+    // Match channel only — lobby hello/state must not keep firing mid-match
+    this.lobbyId = null;
+    this.isLobbyHost = false;
     this._resubscribe();
     this.setStatus('match', {
       ...this.meta,
       matchId,
-      lobbyId: this.lobbyId,
+      lobbyId: null,
     });
   }
 

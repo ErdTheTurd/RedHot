@@ -206,11 +206,13 @@ export class Game {
         let rSpawn = team === TEAMS.RAIDERS ? 1 : 0;
         let sSpawn = team === TEAMS.SENTINELS ? 1 : 0;
         roster.raiders.forEach((slot, i) => {
-          if (slot.kind === 'you') return;
-          if (slot.clientId && slot.clientId === this._myNetId) return;
+          // Skip local seat only. Host roster marks the host as kind:'you' — other
+          // clients must still spawn that seat as a remote human via clientId.
+          if (this._myNetId && slot.clientId && slot.clientId === this._myNetId) return;
+          if (slot.kind === 'you' && (!this._myNetId || !slot.clientId)) return;
           const spawn = spawnsR[rSpawn % spawnsR.length];
           rSpawn += 1;
-          const isHuman = slot.kind === 'human' && slot.clientId;
+          const isHuman = !!(slot.clientId && (slot.kind === 'human' || slot.kind === 'you'));
           addBot(
             isHuman ? `h_${String(slot.clientId).slice(0, 8)}` : `r${i}`,
             slot.name || BOT_NAMES.raiders[i % BOT_NAMES.raiders.length],
@@ -220,11 +222,11 @@ export class Game {
           );
         });
         roster.sentinels.forEach((slot, i) => {
-          if (slot.kind === 'you') return;
-          if (slot.clientId && slot.clientId === this._myNetId) return;
+          if (this._myNetId && slot.clientId && slot.clientId === this._myNetId) return;
+          if (slot.kind === 'you' && (!this._myNetId || !slot.clientId)) return;
           const spawn = spawnsS[sSpawn % spawnsS.length];
           sSpawn += 1;
-          const isHuman = slot.kind === 'human' && slot.clientId;
+          const isHuman = !!(slot.clientId && (slot.kind === 'human' || slot.kind === 'you'));
           addBot(
             isHuman ? `h_${String(slot.clientId).slice(0, 8)}` : `s${i}`,
             slot.name || BOT_NAMES.sentinels[i % BOT_NAMES.sentinels.length],

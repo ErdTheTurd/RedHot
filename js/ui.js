@@ -182,7 +182,7 @@ export function createUI(game, inventory, opts = {}) {
     renderMmSlots();
   }
 
-  function stopMatchmaking(resetUi = true) {
+  function stopMatchmaking(resetUi = true, { preserveMatch = false } = {}) {
     if (mmTimer) {
       clearInterval(mmTimer);
       mmTimer = null;
@@ -195,11 +195,16 @@ export function createUI(game, inventory, opts = {}) {
       unsubLobby();
       unsubLobby = null;
     }
-    mmLaunching = false;
+    if (!preserveMatch) mmLaunching = false;
     mmNetMode = false;
     mmLobbyMembers = new Map();
-    if (net && (net.status === 'searching' || net.status === 'lobby')) {
-      net.leaveLobby();
+    if (net) {
+      if (preserveMatch || net.status === 'match') {
+        // Keep matchId / unit channel; only drop lobby binding
+        net.clearLobby?.();
+      } else if (net.status === 'searching' || net.status === 'lobby') {
+        net.leaveLobby();
+      }
     }
     if (resetUi) {
       $('team-matchmaking')?.classList.add('hidden');
@@ -207,6 +212,20 @@ export function createUI(game, inventory, opts = {}) {
       if ($('mm-status')) $('mm-status').textContent = 'SEARCHING FOR OPERATORS';
       if ($('mm-sub')) $('mm-sub').textContent = 'Looking for players on both fleets…';
     }
+  }
+
+  /** Wire roster: every seated live operator is kind human + clientId (no local 'you'). */
+  function rosterForNet(roster) {
+    const mapSide = (slots) => (slots || []).map((s) => {
+      if ((s.kind === 'you' || s.kind === 'human') && s.clientId) {
+        return { name: s.name, kind: 'human', clientId: s.clientId };
+      }
+      return { ...s };
+    });
+    return {
+      raiders: mapSide(roster.raiders),
+      sentinels: mapSide(roster.sentinels),
+    };
   }
 
   function fillRemainingWithAi(keepHumans = false) {
@@ -268,7 +287,22 @@ export function createUI(game, inventory, opts = {}) {
   function launchMatchFromMm(fromNetStart = null) {
     if (mmLaunching) return;
     mmLaunching = true;
-    stopMatchmaking(false);
+
+    // Capture BEFORE teardown — stopMatchmaking used to zero mmNetMode / leaveLobby
+    // (clearing isLobbyHost + lobbyId) so publishMatchStart never ran and humans
+    // were stripped to AI. Match sync must happen while the lobby is still live.
+    const netMode = mmNetMode;
+    const isHost = !!net?.isLobbyHost;
+
+    // Stop countdown / hello spam only; keep lobby MQTT + flags until start is published
+    if (mmTimer) {
+      clearInterval(mmTimer);
+      mmTimer = null;
+    }
+    if (mmHelloTimer) {
+      clearInterval(mmHelloTimer);
+      mmHelloTimer = null;
+    }
 
     let roster;
     let team = mmTeam;
@@ -287,10 +321,10 @@ export function createUI(game, inventory, opts = {}) {
         sentinels: (roster.sentinels || []).map((s) => ({ ...s })),
       };
       fillRemainingWithAi(true);
-      roster = {
+      roster = rosterForNet({
         raiders: mmRoster.raiders.map((s) => ({ ...s })),
         sentinels: mmRoster.sentinels.map((s) => ({ ...s })),
-      };
+      });
       team = mmTeam;
       for (const side of ['raiders', 'sentinels']) {
         if (roster[side].some((s) => s.clientId && s.clientId === net?.clientId)) {
@@ -308,13 +342,14 @@ export function createUI(game, inventory, opts = {}) {
           ? 'Deploying live operators + AI fill…'
           : 'Empty seats filled with AI. Deploying…';
       }
-      fillRemainingWithAi(mmNetMode && humanCountInRoster() > 1);
+      fillRemainingWithAi(netMode && humanCountInRoster() > 1);
       roster = {
         raiders: mmRoster.raiders.map((s) => ({ ...s })),
         sentinels: mmRoster.sentinels.map((s) => ({ ...s })),
       };
-      if (mmNetMode && net?.isLobbyHost) {
+      if (netMode && isHost && net) {
         matchId = `M${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+        roster = rosterForNet(roster);
         net.publishMatchStart({
           matchId,
           mapId,
@@ -340,7 +375,7 @@ export function createUI(game, inventory, opts = {}) {
 
     const delay = fromNetStart ? 200 : 650;
     setTimeout(() => {
-      stopMatchmaking(true);
+      stopMatchmaking(true, { preserveMatch: !!matchId });
       game.startMatch({
         team,
         mapId,
@@ -409,7 +444,8 @@ export function createUI(game, inventory, opts = {}) {
         $('mm-sub').textContent = `${n} operators locked in — host controls the clock`;
       }
     } else if (msg.type === 'start' && msg.data) {
-      if (net?.isLobbyHost) return; // host already launching
+      // Host already launching; also ignore MQTT echo after attachMatch clears isLobbyHost
+      if (net?.isLobbyHost || mmLaunching) return;
       launchMatchFromMm(msg.data);
     }
   }
