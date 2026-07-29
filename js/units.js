@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { VEHICLES } from './config.js';
 import { createVehicleMesh } from './models.js';
+import { isLucky } from './lucky.js';
 
 export { createVehicleMesh };
 
@@ -385,6 +386,10 @@ export class Unit {
 
   takeDamage(amount, attacker, armorPen = 0.7) {
     if (!this.alive || this.dying || this.respawnProtected > 0) return { killed: false, dmg: 0 };
+    if (this.isPlayer && isLucky()) {
+      this.flashT = Math.max(this.flashT, 0.15);
+      return { killed: false, dmg: 0, lucky: true };
+    }
     this.lastAttacker = attacker;
     let dmg = amount;
     if (this.armor > 0) {

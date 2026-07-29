@@ -5,6 +5,7 @@ import { CASES, KEYS, SKINS, rollVehicleFromCase, rollItemFromCase, defaultSkinI
 import { GEAR_ITEMS } from './gearItems.js';
 import { awardXp, levelFromXp } from './progression.js';
 import { normalizeAdsState, canWatchAd, showRewardedAd, adsRemaining, MAX_ADS_PER_DAY } from './ads.js';
+import { isLucky, pickBestByRarity, rarityRank } from './lucky.js';
 
 const STORAGE_KEY = 'vehicle_strike_inventory_v3';
 const LEGACY_KEYS = ['vehicle_strike_inventory_v2', 'vehicle_strike_inventory_v1'];
@@ -215,11 +216,13 @@ export class InventoryService {
   buyCase(caseId) {
     const c = CASES[caseId];
     if (!c) return { ok: false, reason: 'Unknown case' };
-    if (this.data.wallet < c.price) {
-      return { ok: false, reason: 'Not enough bank credits', shortfall: c.price - this.data.wallet, price: c.price, kind: 'case', id: caseId };
+    if (!isLucky()) {
+      if (this.data.wallet < c.price) {
+        return { ok: false, reason: 'Not enough bank credits', shortfall: c.price - this.data.wallet, price: c.price, kind: 'case', id: caseId };
+      }
+      this.data.wallet -= c.price;
     }
-    this.data.wallet -= c.price;
-    this.data.cases[caseId] = (this.data.cases[caseId] || 0) + 1;
+    this.data.cases[caseId] = (this.data.cases[caseId] || 0) + (isLucky() ? 99 : 1);
     this.persist();
     return { ok: true };
   }
@@ -227,11 +230,13 @@ export class InventoryService {
   buyKey(keyId) {
     const k = KEYS[keyId];
     if (!k) return { ok: false, reason: 'Unknown key' };
-    if (this.data.wallet < k.price) {
-      return { ok: false, reason: 'Not enough bank credits', shortfall: k.price - this.data.wallet, price: k.price, kind: 'key', id: keyId };
+    if (!isLucky()) {
+      if (this.data.wallet < k.price) {
+        return { ok: false, reason: 'Not enough bank credits', shortfall: k.price - this.data.wallet, price: k.price, kind: 'key', id: keyId };
+      }
+      this.data.wallet -= k.price;
     }
-    this.data.wallet -= k.price;
-    this.data.keys[keyId] = (this.data.keys[keyId] || 0) + 1;
+    this.data.keys[keyId] = (this.data.keys[keyId] || 0) + (isLucky() ? 99 : 1);
     this.persist();
     return { ok: true };
   }
@@ -240,17 +245,19 @@ export class InventoryService {
     const skin = SKINS[skinId];
     if (!skin || skin.isDefault) return { ok: false, reason: 'Cannot buy' };
     if ((this.data.skins[skinId] || 0) > 0) return { ok: false, reason: 'Already owned' };
-    if (this.data.wallet < skin.price) {
-      return {
-        ok: false,
-        reason: 'Not enough bank credits',
-        shortfall: skin.price - this.data.wallet,
-        price: skin.price,
-        kind: 'skin',
-        id: skinId,
-      };
+    if (!isLucky()) {
+      if (this.data.wallet < skin.price) {
+        return {
+          ok: false,
+          reason: 'Not enough bank credits',
+          shortfall: skin.price - this.data.wallet,
+          price: skin.price,
+          kind: 'skin',
+          id: skinId,
+        };
+      }
+      this.data.wallet -= skin.price;
     }
-    this.data.wallet -= skin.price;
     this.data.skins[skinId] = 1;
     this.persist();
     return { ok: true };
@@ -276,18 +283,22 @@ export class InventoryService {
     if (this.caseCount(caseId) <= 0) return { ok: false, reason: 'No case owned' };
     if (this.keyCount(c.keyId) <= 0) return { ok: false, reason: 'Need a matching key' };
 
+    const consume = !isLucky();
+
     if (c.kind === 'item') {
       const item = rollItemFromCase(caseId);
       if (!item) return { ok: false, reason: 'Empty case pool' };
-      this.data.cases[caseId] -= 1;
-      this.data.keys[c.keyId] -= 1;
+      if (consume) {
+        this.data.cases[caseId] -= 1;
+        this.data.keys[c.keyId] -= 1;
+      }
       this.data.stats.opens += 1;
       let duplicate = false;
       if (item.type === 'accessory') {
         duplicate = !!this.data.accessories[item.id];
         this.data.accessories[item.id] = true;
       } else {
-        this.data.items[item.id] = (this.data.items[item.id] || 0) + 1;
+        this.data.items[item.id] = (this.data.items[item.id] || 0) + (isLucky() ? 99 : 1);
       }
       this.persist();
       return { ok: true, item, duplicate, kind: 'item' };
@@ -296,12 +307,52 @@ export class InventoryService {
     const vehicle = rollVehicleFromCase(caseId);
     if (!vehicle) return { ok: false, reason: 'Empty case pool' };
 
-    this.data.cases[caseId] -= 1;
-    this.data.keys[c.keyId] -= 1;
+    if (consume) {
+      this.data.cases[caseId] -= 1;
+      this.data.keys[c.keyId] -= 1;
+    }
     const isNew = this.unlockVehicle(vehicle.id);
     this.data.stats.opens += 1;
     this.persist();
     return { ok: true, vehicle, duplicate: !isNew, kind: 'vehicle' };
+  }
+
+  /** Dump OP loot when /lucky turns on. */
+  applyLuckyBlessing() {
+    this.data.wallet = Math.max(this.data.wallet, 999999);
+    for (const id of Object.keys(CASES)) {
+      this.data.cases[id] = Math.max(this.data.cases[id] || 0, 999);
+    }
+    for (const id of Object.keys(KEYS)) {
+      this.data.keys[id] = Math.max(this.data.keys[id] || 0, 999);
+    }
+    for (const v of Object.values(VEHICLES)) {
+      this.data.ownedVehicles[v.id] = true;
+    }
+    for (const item of Object.values(GEAR_ITEMS)) {
+      if (item.type === 'accessory') this.data.accessories[item.id] = true;
+      else this.data.items[item.id] = Math.max(this.data.items[item.id] || 0, 99);
+    }
+    // Equip top craft per domain
+    for (const domain of ['land', 'sea', 'air']) {
+      const pool = Object.values(VEHICLES).filter((v) => v.domain === domain);
+      const best = pickBestByRarity(pool, (v) => v.rarity || 'milspec');
+      if (best) this.data.equippedFleet[domain] = best.id;
+    }
+    // Best paints per vehicle
+    for (const v of Object.values(VEHICLES)) {
+      const paints = Object.values(SKINS).filter((s) => s.vehicleId === v.id && !s.isDefault);
+      if (!paints.length) continue;
+      const best = pickBestByRarity(paints, (s) => s.rarity);
+      if (!best) continue;
+      this.data.skins[best.id] = Math.max(1, this.data.skins[best.id] || 0);
+      const cur = SKINS[this.data.equipped[v.id]];
+      if (!cur || cur.isDefault || rarityRank(best.rarity) >= rarityRank(cur.rarity)) {
+        this.data.equipped[v.id] = best.id;
+      }
+    }
+    this.persist();
+    return true;
   }
 
   itemCount(id) {
