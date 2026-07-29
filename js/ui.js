@@ -2248,21 +2248,64 @@ export function createUI(game, inventory, opts = {}) {
     const w = canvas.width;
     const h = canvas.height;
     ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = 'rgba(12, 40, 55, 0.95)';
+    const mm = game.map?.minimap || {};
+    const waterTint = mm.waterTint || '#0c2837';
+    const landTint = mm.landTint || '#465a41';
+    ctx.fillStyle = waterTint.length === 7
+      ? `rgba(${parseInt(waterTint.slice(1, 3), 16)},${parseInt(waterTint.slice(3, 5), 16)},${parseInt(waterTint.slice(5, 7), 16)},0.95)`
+      : 'rgba(12, 40, 55, 0.95)';
     ctx.fillRect(0, 0, w, h);
     const scale = w / 110;
     const toX = (x) => w / 2 + x * scale;
     const toY = (z) => h / 2 + z * scale;
-    ctx.fillStyle = 'rgba(70, 90, 65, 0.85)';
-    ctx.fillRect(toX(-40), toY(-35), 70 * scale, 55 * scale);
-    ctx.fillStyle = '#e85d04';
-    ctx.beginPath();
-    ctx.arc(toX(-28), toY(22), 5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#1d9bf0';
-    ctx.beginPath();
-    ctx.arc(toX(30), toY(18), 5, 0, Math.PI * 2);
-    ctx.fill();
+    const land = mm.land || [-40, -35, 70, 55];
+    ctx.fillStyle = landTint.length === 7
+      ? `rgba(${parseInt(landTint.slice(1, 3), 16)},${parseInt(landTint.slice(3, 5), 16)},${parseInt(landTint.slice(5, 7), 16)},0.88)`
+      : 'rgba(70, 90, 65, 0.85)';
+    ctx.fillRect(toX(land[0]), toY(land[1]), land[2] * scale, land[3] * scale);
+
+    // Layout-specific water cuts on the minimap
+    const layout = game.map?.layout;
+    if (layout === 'canyon') {
+      ctx.fillStyle = ctx.fillStyle.replace('0.88', '0.95');
+      ctx.strokeStyle = waterTint;
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(toX(2), toY(-36));
+      ctx.lineTo(toX(0), toY(32));
+      ctx.stroke();
+    } else if (layout === 'ice') {
+      ctx.fillStyle = waterTint;
+      ctx.globalAlpha = 0.55;
+      ctx.fillRect(toX(-40), toY(-5), 80 * scale, 6 * scale);
+      ctx.fillRect(toX(3), toY(-28), 5 * scale, 50 * scale);
+      ctx.globalAlpha = 1;
+    } else if (layout === 'yard') {
+      ctx.strokeStyle = waterTint;
+      ctx.lineWidth = 4;
+      ctx.strokeRect(toX(-34), toY(-30), 68 * scale, 56 * scale);
+      ctx.beginPath();
+      ctx.moveTo(toX(-28), toY(2));
+      ctx.lineTo(toX(28), toY(2));
+      ctx.moveTo(toX(-2), toY(-22));
+      ctx.lineTo(toX(-2), toY(20));
+      ctx.stroke();
+    }
+
+    const siteA = game.map?.sites?.A;
+    const siteB = game.map?.sites?.B;
+    if (siteA) {
+      ctx.fillStyle = '#e85d04';
+      ctx.beginPath();
+      ctx.arc(toX(siteA.x), toY(siteA.z), 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (siteB) {
+      ctx.fillStyle = '#1d9bf0';
+      ctx.beginPath();
+      ctx.arc(toX(siteB.x), toY(siteB.z), 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
     if (game.bomb.planted && game.bomb.position) {
       ctx.fillStyle = '#ffd166';
       ctx.fillRect(toX(game.bomb.position.x) - 3, toY(game.bomb.position.z) - 3, 6, 6);

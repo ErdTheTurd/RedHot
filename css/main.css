@@ -518,10 +518,27 @@ html, body {
   padding: 0.2rem 0.55rem;
 }
 
-.map-ironfront { background: linear-gradient(145deg, rgba(42, 90, 110, 0.35), rgba(10, 16, 22, 0.85)); }
-.map-dustfall { background: linear-gradient(145deg, rgba(160, 110, 40, 0.35), rgba(10, 16, 22, 0.85)); }
-.map-frostbite { background: linear-gradient(145deg, rgba(120, 170, 200, 0.3), rgba(10, 16, 22, 0.85)); }
-.map-blacksite { background: linear-gradient(145deg, rgba(80, 20, 50, 0.4), rgba(8, 10, 16, 0.9)); }
+.map-ironfront {
+  background:
+    radial-gradient(ellipse at 20% 30%, rgba(232, 93, 4, 0.2), transparent 45%),
+    linear-gradient(145deg, rgba(42, 90, 110, 0.45), rgba(10, 16, 22, 0.9));
+}
+.map-dustfall {
+  background:
+    radial-gradient(ellipse at 70% 20%, rgba(212, 160, 23, 0.28), transparent 40%),
+    linear-gradient(160deg, rgba(180, 110, 40, 0.45), rgba(60, 35, 12, 0.85) 55%, rgba(10, 16, 22, 0.92));
+}
+.map-frostbite {
+  background:
+    radial-gradient(ellipse at 40% 60%, rgba(180, 220, 255, 0.22), transparent 50%),
+    linear-gradient(145deg, rgba(140, 180, 210, 0.4), rgba(20, 40, 60, 0.9));
+}
+.map-blacksite {
+  background:
+    radial-gradient(circle at 30% 40%, rgba(255, 59, 122, 0.25), transparent 35%),
+    radial-gradient(circle at 70% 60%, rgba(59, 255, 200, 0.12), transparent 40%),
+    linear-gradient(145deg, rgba(40, 12, 28, 0.7), rgba(6, 8, 14, 0.95));
+}
 
 .mode-vigilante.selected {
   border-color: #ff3b7a;
