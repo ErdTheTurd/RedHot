@@ -67,7 +67,7 @@
         <div class="auth-card hidden" id="auth-login-panel">
           <p class="auth-kicker">WELCOME BACK</p>
           <h2>Confirm operator</h2>
-          <p class="auth-lead">Sign in with the callsign saved on this browser to enter the fleet.</p>
+          <p class="auth-lead">Sign in with your callsign. It does not need to match the name last used on this device.</p>
           <label class="auth-field">
             <span>Callsign</span>
             <input id="auth-login-user" type="text" maxlength="16" autocomplete="username" />
@@ -79,7 +79,32 @@
           <p class="auth-error hidden" id="auth-login-error"></p>
           <button class="btn btn-primary" id="btn-auth-login">ENTER</button>
           <p class="auth-switch">
+            <button type="button" class="auth-link" id="btn-auth-to-forgot">Forgot password?</button>
+          </p>
+          <p class="auth-switch">
             <button type="button" class="auth-link" id="btn-auth-to-create">New operator? Create account</button>
+          </p>
+        </div>
+        <div class="auth-card hidden" id="auth-forgot-panel">
+          <p class="auth-kicker">PASSWORD RESET</p>
+          <h2>Set a new password</h2>
+          <p class="auth-lead">Enter any callsign and a new password. Device name mismatch does not matter — the typed callsign becomes your operator on this browser.</p>
+          <label class="auth-field">
+            <span>Callsign</span>
+            <input id="auth-forgot-user" type="text" maxlength="16" autocomplete="username" placeholder="e.g. Ashwake" />
+          </label>
+          <label class="auth-field">
+            <span>New password <em>(optional)</em></span>
+            <input id="auth-forgot-pass" type="password" maxlength="64" autocomplete="new-password" placeholder="Leave blank to clear" />
+          </label>
+          <label class="auth-field">
+            <span>Confirm password</span>
+            <input id="auth-forgot-pass2" type="password" maxlength="64" autocomplete="new-password" />
+          </label>
+          <p class="auth-error hidden" id="auth-forgot-error"></p>
+          <button class="btn btn-primary" id="btn-auth-forgot">RESET &amp; ENTER</button>
+          <p class="auth-switch">
+            <button type="button" class="auth-link" id="btn-auth-forgot-to-login">Back to sign in</button>
           </p>
         </div>
       </div>
@@ -135,7 +160,7 @@
       <div class="panel-card wide">
         <h2>OPERATIONS BRIEFING</h2>
         <ul class="brief-list">
-          <li><strong>Account</strong> — Create a callsign (optional password). LOG OUT returns you to sign-in; from there you can log back in or create a new operator (replaces the local profile).</li>
+          <li><strong>Account</strong> — Create a callsign (optional password). LOG OUT returns you to sign-in; from there you can log back in, use Forgot password (any callsign — device name mismatch does not matter), or create a new operator (replaces the local profile).</li>
           <li><strong>Catholic Trivia</strong> — Before DEPLOY, answer 5 questions (need 4 correct). Reloading and buying also ask a quick faith check; a correct answer when short on credits can grant alms. Type <code>/no-questions</code> to skip (type again to restore).</li>
           <li><strong>Matchmaking</strong> — Team modes search for live operators for 60 seconds. If others are on the site with the same map/mode, you share one lobby under real callsigns. Empty seats become AI.</li>
           <li><strong>Buy vote</strong> — When two or more humans are in a match, vote during buy phase to extend it (up to 2:00). Majority agreement applies.</li>
