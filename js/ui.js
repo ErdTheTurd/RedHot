@@ -13,7 +13,7 @@ import { MAX_ADS_PER_DAY } from './ads.js';
 import { getGraphicsPreset, setGraphicsPreset } from './graphics.js';
 import { pickTriviaQuestions, defaultPassNeed, isTriviaSkipped } from './trivia.js';
 import {
-  hasAccount, getAccount, isLoggedIn, createAccount, loginAccount, renameAccount,
+  hasAccount, getAccount, isLoggedIn, createAccount, loginAccount,
 } from './account.js';
 import { isDevOperator, isDevName } from './dev.js';
 
@@ -1095,18 +1095,6 @@ export function createUI(game, inventory, opts = {}) {
       e.preventDefault();
       closeChat(true);
     }
-  });
-  $('btn-become-dev')?.addEventListener('click', async () => {
-    SFX.ui();
-    const res = await renameAccount('DEV');
-    if (!res.ok) {
-      toast(res.reason || 'Could not set DEV');
-      return;
-    }
-    if (net) net.account = res.account;
-    inventory.setCallsign('DEV');
-    refreshMeta();
-    toast('Callsign is now DEV — full admin unlocked. Reload if multiplayer was mid-match.');
   });
 
   function renderOps() {
