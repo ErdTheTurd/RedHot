@@ -576,6 +576,13 @@ export class InventoryService {
     this.persist();
   }
 
+  /** Fresh bank/fleet profile (e.g. after creating a replacement account). */
+  resetToBlank(callsign) {
+    this.data = blank();
+    if (callsign) this.data.profile.callsign = String(callsign).slice(0, 16);
+    this.persist();
+  }
+
   // —— Rewarded ads ——
   getAdsState() {
     this.data.ads = normalizeAdsState(this.data.ads);

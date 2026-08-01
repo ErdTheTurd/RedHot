@@ -2203,6 +2203,27 @@ tr.you { background: rgba(255,255,255,0.05); }
   margin-top: 0.25rem;
 }
 
+.auth-switch {
+  margin: 1rem 0 0;
+  text-align: center;
+}
+
+.auth-link {
+  background: none;
+  border: none;
+  color: var(--signal);
+  font: 500 0.88rem var(--font-body);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  padding: 0.35rem;
+}
+
+.auth-link:hover {
+  color: var(--foam);
+}
+
 .menu-callsign {
   font-family: var(--font-display);
   letter-spacing: 0.28em;

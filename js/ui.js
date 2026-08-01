@@ -13,7 +13,7 @@ import { MAX_ADS_PER_DAY } from './ads.js';
 import { getGraphicsPreset, setGraphicsPreset } from './graphics.js';
 import { pickTriviaQuestions, defaultPassNeed, isTriviaSkipped } from './trivia.js';
 import {
-  hasAccount, getAccount, isLoggedIn, createAccount, loginAccount,
+  hasAccount, getAccount, isLoggedIn, createAccount, loginAccount, logoutAccount,
 } from './account.js';
 import { isDevOperator, isDevName } from './dev.js';
 
@@ -849,19 +849,8 @@ export function createUI(game, inventory, opts = {}) {
   function wireAuth() {
     const createPanel = $('auth-create-panel');
     const loginPanel = $('auth-login-panel');
-    const existing = getAccount();
-
-    if (existing) {
-      createPanel?.classList.add('hidden');
-      loginPanel?.classList.remove('hidden');
-      if ($('auth-login-user')) $('auth-login-user').value = existing.username;
-      if (!existing.passHash) {
-        $('auth-login-pass-wrap')?.classList.add('hidden');
-      }
-    } else {
-      createPanel?.classList.remove('hidden');
-      loginPanel?.classList.add('hidden');
-    }
+    const switchToLogin = $('auth-switch-to-login');
+    const createLead = $('auth-create-lead');
 
     const showErr = (id, msg) => {
       const el = $(id);
@@ -870,17 +859,64 @@ export function createUI(game, inventory, opts = {}) {
       el.classList.toggle('hidden', !msg);
     };
 
+    const paintAuthPanels = (prefer = null) => {
+      const existing = getAccount();
+      const mode = prefer || (existing ? 'login' : 'create');
+      const showLogin = mode === 'login' && !!existing;
+      createPanel?.classList.toggle('hidden', showLogin);
+      loginPanel?.classList.toggle('hidden', !showLogin);
+      switchToLogin?.classList.toggle('hidden', !existing || showLogin);
+      if (createLead) {
+        createLead.textContent = existing && !showLogin
+          ? 'Creating a new callsign replaces the operator saved on this device and resets bank, crates, and loadout.'
+          : 'Optional password locks your local profile. Online multiplayer uses your callsign when others are on the site.';
+      }
+      if (existing && $('auth-login-user')) {
+        $('auth-login-user').value = existing.username;
+      }
+      if (existing && !existing.passHash) {
+        $('auth-login-pass-wrap')?.classList.add('hidden');
+      } else {
+        $('auth-login-pass-wrap')?.classList.remove('hidden');
+      }
+      showErr('auth-create-error', '');
+      showErr('auth-login-error', '');
+    };
+
+    paintAuthPanels();
+
+    if (wireAuth._bound) {
+      wireAuth._paint = paintAuthPanels;
+      return;
+    }
+    wireAuth._bound = true;
+    wireAuth._paint = paintAuthPanels;
+
+    $('btn-auth-to-login')?.addEventListener('click', () => {
+      SFX.ui();
+      paintAuthPanels('login');
+    });
+    $('btn-auth-to-create')?.addEventListener('click', () => {
+      SFX.ui();
+      paintAuthPanels('create');
+      if ($('auth-create-user')) $('auth-create-user').value = '';
+      if ($('auth-create-pass')) $('auth-create-pass').value = '';
+    });
+
     $('btn-auth-create')?.addEventListener('click', async () => {
       showErr('auth-create-error', '');
+      const replacing = hasAccount();
       const res = await createAccount(
         $('auth-create-user')?.value,
-        $('auth-create-pass')?.value
+        $('auth-create-pass')?.value,
+        { replace: replacing }
       );
       if (!res.ok) {
         showErr('auth-create-error', res.reason);
         return;
       }
-      inventory.setCallsign(res.account.username);
+      if (replacing) inventory.resetToBlank(res.account.username);
+      else inventory.setCallsign(res.account.username);
       SFX.ui();
       await finishAuth(res.account);
     });
@@ -932,6 +968,31 @@ export function createUI(game, inventory, opts = {}) {
       toast('DEV privileges online — full admin, chat, match control', 3200);
     }
     showScreen('menu');
+  }
+
+  function performLogout() {
+    SFX.ui();
+    stopMatchmaking(true);
+    if (game.running) {
+      game.running = false;
+      game._finishing = false;
+      try { game._tearDownNet?.(); } catch { /* ignore */ }
+      $('hud')?.classList.add('hidden');
+      game.input?.exitLock?.();
+      hideAllScreens();
+    }
+    try {
+      net?.leaveLobby?.();
+      net?.disconnect?.();
+    } catch {
+      /* ignore */
+    }
+    logoutAccount();
+    if (net) net.account = null;
+    wireAuth();
+    wireAuth._paint?.('login');
+    showScreen('auth');
+    toast('Logged out — sign in or create a new operator');
   }
 
   function gateAuthOrMenu() {
@@ -1040,6 +1101,7 @@ export function createUI(game, inventory, opts = {}) {
   };
   $('btn-howto').onclick = () => { SFX.ui(); showScreen('howto'); };
   $('btn-howto-back').onclick = () => { SFX.ui(); showScreen('menu'); };
+  $('btn-logout')?.addEventListener('click', () => performLogout());
   $('btn-ops-back').onclick = () => { SFX.ui(); showScreen('menu'); };
   $('btn-team-back').onclick = () => {
     SFX.ui();
