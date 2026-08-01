@@ -360,11 +360,121 @@ export class Game {
       z: u.mesh.position.z,
       flightAlt: u.flightAlt || 0,
       transforming: !!u.transformLock,
+      hasBomb: !!u.hasBomb,
     };
+  }
+
+  _toastAchievements(list) {
+    if (!list?.length) return;
+    for (const row of list) {
+      this.ui?.toast?.(`Commendation: ${row.def?.name || row.id}`, 3200);
+    }
+  }
+
+  _netEventId(prefix) {
+    return `${prefix}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  _publishShot(kind, p) {
+    if (!this.netEnabled || !this.net || !p?.owner?.isPlayer) return;
+    this.net.publishEvent({
+      type: 'shot',
+      eventId: this._netEventId(`shot-${kind}`),
+      kind,
+      x: p.pos.x,
+      y: p.pos.y,
+      z: p.pos.z,
+      dx: p.dir.x,
+      dy: p.dir.y,
+      dz: p.dir.z,
+      speed: p.speed,
+      life: p.life,
+      damage: p.damage,
+      pen: p.pen,
+      radius: p.radius,
+      heavy: !!p.heavy,
+      vy: p.vy,
+    });
+  }
+
+  _spawnNetProjectile(data) {
+    const owner = this.units.find((u) => u.netId && u.netId === data.from) || null;
+    if (!owner) return;
+    const origin = new THREE.Vector3(data.x || 0, data.y || 0, data.z || 0);
+    const dir = new THREE.Vector3(data.dx || 0, data.dy || 0, data.dz || 1);
+    if (dir.lengthSq() < 1e-6) dir.set(0, 0, 1);
+    dir.normalize();
+    const kind = data.kind || 'gun';
+    let mesh = null;
+    if (kind === 'bomb') mesh = createBombMesh();
+    else if (kind === 'torpedo') mesh = createTorpedoMesh();
+    else mesh = createProjectileMesh(!!data.heavy);
+    mesh.position.copy(origin);
+    if (kind !== 'bomb') orientProjectile(mesh, dir);
+    this.scene.add(mesh);
+    if (kind === 'gun') {
+      const muzzle = spawnMuzzleFlash(this.scene, origin.clone(), dir, !!data.heavy);
+      this.effects.push({ isMuzzle: true, ...muzzle });
+      SFX.fire(!!data.heavy);
+    } else {
+      SFX.fire(true);
+    }
+    this.projectiles.push({
+      kind,
+      pos: origin.clone(),
+      dir,
+      speed: data.speed || (kind === 'torpedo' ? 42 : kind === 'bomb' ? 28 : 110),
+      life: data.life || 3,
+      damage: data.damage || 40,
+      pen: data.pen ?? 0.7,
+      radius: data.radius,
+      owner,
+      heavy: !!data.heavy,
+      mesh,
+      vy: data.vy,
+      fromNet: true,
+    });
+  }
+
+  _ensureBombMesh(site, position) {
+    if (this.bomb.mesh) return;
+    const pos = position
+      ? new THREE.Vector3(position.x, position.y, position.z)
+      : (site && this.map.sites?.[site] ? this.map.sites[site].clone() : null);
+    if (!pos) return;
+    this.bomb.position = pos;
+    this.bomb.site = site || this.bomb.site;
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(1.2, 0.7, 0.8),
+      new THREE.MeshStandardMaterial({
+        color: 0x222222,
+        emissive: 0xe85d04,
+        emissiveIntensity: 0.5,
+        metalness: 0.6,
+        roughness: 0.4,
+      })
+    );
+    mesh.position.copy(pos);
+    mesh.position.y = (pos.y || 0) + 1.2;
+    this.scene.add(mesh);
+    this.bomb.mesh = mesh;
+  }
+
+  _applyBombCarrier(carrierNetId, carrierId) {
+    for (const u of this.units) u.hasBomb = false;
+    let carrier = null;
+    if (carrierNetId) carrier = this.units.find((u) => u.netId === carrierNetId);
+    if (!carrier && carrierId) carrier = this.units.find((u) => u.id === carrierId);
+    if (carrier && carrier.alive) {
+      carrier.hasBomb = true;
+      this.bomb.carrier = carrier;
+      if (carrier.isPlayer) this.ui?.toast?.('You carry the warhead', 1600);
+    }
   }
 
   _applyUnitState(u, s, lerp = 0.35) {
     if (!u || !s) return;
+    const wasAlive = u.alive !== false;
     if (typeof s.yaw === 'number') u.yaw = s.yaw;
     if (typeof s.pitch === 'number') u.pitch = s.pitch;
     if (typeof s.hp === 'number') u.hp = s.hp;
@@ -373,7 +483,13 @@ export class Game {
     if (typeof s.kills === 'number') u.kills = s.kills;
     if (typeof s.deaths === 'number') u.deaths = s.deaths;
     if (typeof s.alive === 'boolean') u.alive = s.alive;
+    if (typeof s.hasBomb === 'boolean' && u.isRemote) u.hasBomb = s.hasBomb;
     if (typeof s.flightAlt === 'number') u.flightAlt = s.flightAlt;
+    if (wasAlive && s.alive === false && u.isRemote && !u.dying) {
+      this.beginDeathFall(u);
+      const killer = this.units.find((x) => x.isPlayer) || u;
+      this.ui?.killFeed?.(killer, u, 'HIT');
+    }
 
     // Remotes often only have scout_tracker in loadout — force the networked craft
     if (s.vehicleId && u.vehicle?.id !== s.vehicleId && !u.transformLock) {
@@ -488,8 +604,26 @@ export class Game {
     if (data.frags) this.frags = { ...data.frags };
     if (data.buyVotes) this.buyVotes = { ...data.buyVotes };
     if (data.bomb) {
-      this.bomb.planted = !!data.bomb.planted;
+      const planted = !!data.bomb.planted;
       this.bomb.timer = data.bomb.timer ?? this.bomb.timer;
+      if (planted) {
+        this.bomb.planted = true;
+        this.bomb.site = data.bomb.site || this.bomb.site;
+        if (typeof data.bomb.x === 'number') {
+          this._ensureBombMesh(data.bomb.site, {
+            x: data.bomb.x,
+            y: data.bomb.y ?? 0,
+            z: data.bomb.z,
+          });
+        } else {
+          this._ensureBombMesh(data.bomb.site);
+        }
+      } else if (this.bomb.planted) {
+        this.clearBomb();
+      }
+      if (data.bomb.carrierNetId || data.bomb.carrierId) {
+        this._applyBombCarrier(data.bomb.carrierNetId, data.bomb.carrierId);
+      }
     }
   }
 
@@ -526,9 +660,84 @@ export class Game {
       return;
     }
 
+    if (data.type === 'shot' && data.from && data.from !== this._myNetId) {
+      this._spawnNetProjectile(data);
+      return;
+    }
+
+    if (data.type === 'plant' && data.site) {
+      const planter = this.units.find((u) => u.netId === data.from);
+      if (planter) planter.hasBomb = false;
+      if (!this.bomb.planted) {
+        this.bomb.planted = true;
+        this.bomb.site = data.site;
+        this.bomb.timer = data.timer ?? BOMB_TIME;
+        this.phase = PHASE.BOMB;
+        this.phaseLabel = 'WARHEAD';
+        this.timer = this.bomb.timer;
+        this._ensureBombMesh(data.site, data.x != null ? { x: data.x, y: data.y, z: data.z } : null);
+        SFX.plant();
+        this.ui?.toast?.(`WARHEAD PLANTED · ${data.site}`);
+        this.ui?.showBanner?.('WARHEAD PLANTED', `Site ${data.site}`);
+      }
+      return;
+    }
+
+    if (data.type === 'defuse') {
+      if (this.bomb.planted) {
+        this.clearBomb();
+        SFX.roundWin();
+        this.endRound?.(TEAMS.SENTINELS, 'Warhead defused');
+      }
+      return;
+    }
+
+    if (data.type === 'bombCarrier') {
+      this._applyBombCarrier(data.carrierNetId, data.carrierId);
+      return;
+    }
+
+    if (data.type === 'mine' && data.from !== this._myNetId) {
+      const owner = this.units.find((u) => u.netId === data.from);
+      if (!owner || typeof data.x !== 'number') return;
+      const mesh = createLandmineMesh();
+      const ground = this.map.groundHeight(data.x, data.z);
+      mesh.position.set(data.x, ground + 0.06, data.z);
+      mesh.visible = false;
+      this.scene.add(mesh);
+      this.mines.push({
+        mesh,
+        pos: mesh.position.clone(),
+        owner,
+        team: owner.team,
+        armed: true,
+        fromNet: true,
+        netId: data.mineId || eid,
+      });
+      return;
+    }
+
+    if (data.type === 'mineBoom') {
+      if (data.from === this._myNetId) return;
+      const mine = this.mines.find((m) => m.netId && m.netId === data.mineId);
+      if (mine) {
+        mine.armed = false;
+        if (mine.mesh) this.scene.remove(mine.mesh);
+        this.mines = this.mines.filter((m) => m !== mine);
+      }
+      const boomPos = new THREE.Vector3(data.x || 0, (data.y || 0) + 0.8, data.z || 0);
+      this.spawnExplosion(boomPos);
+      SFX.kill();
+      return;
+    }
+
     if (data.type === 'damage' && data.targetNetId === this._myNetId && this.player) {
       const attacker = this.units.find((u) => u.netId === data.from) || this.player;
-      this.player.takeDamage(data.amount || 0, attacker, data.pen ?? 1);
+      const result = this.player.takeDamage(data.amount || 0, attacker, data.pen ?? 1);
+      if (result.killed) {
+        this.beginDeathFall(this.player);
+        this.ui?.killFeed?.(attacker, this.player, data.weapon || 'HIT');
+      }
     }
   }
 
@@ -588,6 +797,9 @@ export class Game {
         .filter((u) => !u.isPlayer && !u.isRemote)
         .map((u) => this._serializeUnit(u));
       this.net.publishAiUnits(ai);
+      const carrier = this.bomb.carrier;
+      const carrierNetId = carrier?.netId
+        || (carrier?.isPlayer ? this._myNetId : null);
       this.net.publishMatchMeta({
         phase: this.phase,
         phaseLabel: this.phaseLabel,
@@ -598,6 +810,12 @@ export class Game {
         bomb: {
           planted: this.bomb.planted,
           timer: this.bomb.timer,
+          site: this.bomb.site,
+          x: this.bomb.position?.x,
+          y: this.bomb.position?.y,
+          z: this.bomb.position?.z,
+          carrierNetId,
+          carrierId: carrier?.id || null,
         },
         roundNumber: this.roundNumber,
       });
@@ -678,11 +896,24 @@ export class Game {
     }
 
     if (this.mode?.plant) {
-      const raiders = this.units.filter((u) => u.team === TEAMS.RAIDERS);
-      if (raiders.length) {
-        const carrier = raiders[Math.floor(Math.random() * raiders.length)];
-        carrier.hasBomb = true;
-        this.bomb.carrier = carrier;
+      for (const u of this.units) u.hasBomb = false;
+      this.bomb.carrier = null;
+      // Host (or offline) picks the carrier so every client shares the same warhead holder
+      if (!this.netEnabled || this.isNetHost) {
+        const raiders = this.units.filter((u) => u.team === TEAMS.RAIDERS && u.alive);
+        if (raiders.length) {
+          const carrier = raiders[Math.floor(Math.random() * raiders.length)];
+          carrier.hasBomb = true;
+          this.bomb.carrier = carrier;
+          if (this.netEnabled && this.isNetHost) {
+            this.net?.publishEvent?.({
+              type: 'bombCarrier',
+              eventId: this._netEventId(`carrier-${this.roundNumber}`),
+              carrierNetId: carrier.netId || (carrier.isPlayer ? this._myNetId : null),
+              carrierId: carrier.id,
+            });
+          }
+        }
       }
     }
 
@@ -722,32 +953,41 @@ export class Game {
     this.phase = PHASE.BOMB;
     this.phaseLabel = 'WARHEAD';
     this.timer = BOMB_TIME;
-
-    const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(1.2, 0.7, 0.8),
-      new THREE.MeshStandardMaterial({
-        color: 0x222222,
-        emissive: 0xe85d04,
-        emissiveIntensity: 0.5,
-        metalness: 0.6,
-        roughness: 0.4,
-      })
-    );
-    mesh.position.copy(this.bomb.position);
-    mesh.position.y = 1.2;
-    this.scene.add(mesh);
-    this.bomb.mesh = mesh;
+    this._ensureBombMesh(site, this.bomb.position);
 
     unit.money = Math.min(MAX_MONEY, unit.money + PLANT_REWARD);
     SFX.plant();
     this.ui.toast(`WARHEAD PLANTED · ${site}`);
     this.ui.showBanner('WARHEAD PLANTED', `Site ${site}`);
+    if (unit.isPlayer) {
+      this._toastAchievements(this.inventory?.notePlant?.());
+    }
+    if (this.netEnabled && unit.isPlayer) {
+      this.net?.publishEvent?.({
+        type: 'plant',
+        eventId: this._netEventId(`plant-${site}`),
+        site,
+        timer: BOMB_TIME,
+        x: this.bomb.position.x,
+        y: this.bomb.position.y,
+        z: this.bomb.position.z,
+      });
+    }
   }
 
   defuseBomb(unit) {
     if (!this.bomb.planted) return;
     this.clearBomb();
     SFX.roundWin();
+    if (unit?.isPlayer) {
+      this._toastAchievements(this.inventory?.noteDefuse?.());
+    }
+    if (this.netEnabled && unit?.isPlayer) {
+      this.net?.publishEvent?.({
+        type: 'defuse',
+        eventId: this._netEventId('defuse'),
+      });
+    }
     this.endRound(TEAMS.SENTINELS, 'Warhead defused');
   }
 
@@ -801,7 +1041,14 @@ export class Game {
     this.phaseLabel = 'END';
     const deposit = 400 + this.player.kills * 80 + (playerWon ? 900 : 250) + Math.floor(this.player.money * 0.15);
     const xp = 120 + this.player.kills * 35 + (playerWon ? 200 : 60);
-    this.inventory?.recordMatch(playerWon, deposit, xp);
+    const humans = (this.netHumans || []).filter((h) => h.clientId).length;
+    const res = this.inventory?.recordMatch(playerWon, deposit, xp, {
+      kills: this.player?.kills || 0,
+      multiplayer: !!(this.netEnabled && humans >= 2),
+      modeId: this.modeId,
+      mapId: this.mapId,
+    });
+    this._toastAchievements(res?.achievements);
     const title = playerWon ? 'OPERATION SUCCESS' : 'OPERATION FAILED';
     this.ui.showBanner(title, reason || `Bank +${deposit}`);
     if (playerWon) SFX.roundWin();
@@ -830,7 +1077,13 @@ export class Game {
     this.phaseLabel = 'EXTRACT';
     const deposit = 500 + this.player.kills * 100 + Math.floor(this.player.money * 0.1);
     const xp = 80 + this.player.kills * 40;
-    this.inventory?.recordMatch(true, deposit, xp);
+    const res = this.inventory?.recordMatch(true, deposit, xp, {
+      kills: this.player?.kills || 0,
+      extracted: true,
+      modeId: this.modeId,
+      mapId: this.mapId,
+    });
+    this._toastAchievements(res?.achievements);
     SFX.roundWin();
     this.ui.showBanner('EXTRACTED', `Solo run complete · Bank +${deposit} · XP +${xp}`);
     setTimeout(() => {
@@ -845,6 +1098,8 @@ export class Game {
 
   detonateOrdnance(p) {
     this.spawnExplosion(p.pos.clone());
+    // Peers already show the blast from the synced projectile — skip local damage
+    if (p.fromNet) return;
     const radius = p.radius || 6;
     for (const u of this.units) {
       if (!u.alive || u === p.owner) continue;
@@ -853,6 +1108,19 @@ export class Game {
       if (dist > radius) continue;
       const falloff = 1 - dist / radius;
       const dmg = p.damage * (0.45 + falloff * 0.55);
+      if (u.isRemote && this.netEnabled && u.netId) {
+        this.net.publishEvent({
+          type: 'damage',
+          eventId: this._netEventId('ord-dmg'),
+          targetNetId: u.netId,
+          amount: dmg,
+          pen: p.pen,
+          weapon: p.kind === 'torpedo' ? 'TORPEDO' : 'BOMB',
+        });
+        if (p.owner?.isPlayer) SFX.hit();
+        continue;
+      }
+      if (u.isRemote) continue;
       const result = u.takeDamage(dmg, p.owner, p.pen);
       if (p.owner.isPlayer) SFX.hit();
       if (result.killed) {
@@ -1216,7 +1484,7 @@ export class Game {
     const dmgMul = (1 + (unit.matchMods?.damageBonus || 0)) * luckDmg;
     const penBonus = (unit.matchMods?.armorPenBonus || 0) + (luckyShot ? 0.9 : semiShot ? 0.25 : 0);
     const flightLife = Math.min(5, def.range / (heavy ? 75 : 110));
-    this.projectiles.push({
+    const shot = {
       kind: 'gun',
       pos: origin,
       dir,
@@ -1233,7 +1501,9 @@ export class Game {
       mesh,
       radius: luckyShot ? 7.5 : semiShot ? 3.2 : undefined,
       lucky: luckyShot,
-    });
+    };
+    this.projectiles.push(shot);
+    this._publishShot('gun', shot);
 
     if (unit.isPlayer) {
       SFX.fire(heavy);
@@ -1263,7 +1533,7 @@ export class Game {
     const mesh = createBombMesh();
     mesh.position.copy(origin);
     this.scene.add(mesh);
-    this.projectiles.push({
+    const shot = {
       kind: 'bomb',
       pos: origin,
       dir: new THREE.Vector3(Math.sin(unit.yaw) * 0.15, -1, Math.cos(unit.yaw) * 0.15).normalize(),
@@ -1276,7 +1546,9 @@ export class Game {
       owner: unit,
       heavy: true,
       mesh,
-    });
+    };
+    this.projectiles.push(shot);
+    this._publishShot('bomb', shot);
     if (unit.isPlayer) {
       SFX.fire(true);
       this.ui.toast(`Bomb away · ${unit.bombs} left`, 900);
@@ -1305,7 +1577,7 @@ export class Game {
     mesh.position.copy(origin);
     orientProjectile(mesh, dir);
     this.scene.add(mesh);
-    this.projectiles.push({
+    const shot = {
       kind: 'torpedo',
       pos: origin,
       dir,
@@ -1317,7 +1589,9 @@ export class Game {
       owner: unit,
       heavy: true,
       mesh,
-    });
+    };
+    this.projectiles.push(shot);
+    this._publishShot('torpedo', shot);
     if (unit.isPlayer) {
       SFX.fire(true);
       this.ui.toast(`Torpedo · ${unit.torpedoes} left`, 900);
@@ -1415,16 +1689,28 @@ export class Game {
     // Own mines always visible to planter
     mesh.visible = !!unit.isPlayer;
     this.scene.add(mesh);
+    const mineId = this._netEventId('mine');
     this.mines.push({
       mesh,
       pos: mesh.position.clone(),
       owner: unit,
       team: unit.team,
       armed: true,
+      netId: mineId,
     });
     if (unit.isPlayer) {
       SFX.plant();
       this.ui.toast(`Mine planted · ${unit.landmines} left`, 1200);
+      if (this.netEnabled) {
+        this.net?.publishEvent?.({
+          type: 'mine',
+          eventId: mineId,
+          mineId,
+          x: mesh.position.x,
+          y: mesh.position.y,
+          z: mesh.position.z,
+        });
+      }
     }
   }
 
@@ -1467,12 +1753,34 @@ export class Game {
     const boomPos = mine.pos.clone().add(new THREE.Vector3(0, 0.8, 0));
     this.spawnExplosion(boomPos);
     SFX.kill();
+    if (this.netEnabled && mine.netId && (mine.owner?.isPlayer || mine.fromNet)) {
+      this.net?.publishEvent?.({
+        type: 'mineBoom',
+        eventId: this._netEventId('mineBoom'),
+        mineId: mine.netId,
+        x: mine.pos.x,
+        y: mine.pos.y,
+        z: mine.pos.z,
+      });
+    }
     for (const u of this.units) {
       if (!u.alive) continue;
       const dist = u.mesh.position.distanceTo(mine.pos);
       if (dist > 7) continue;
       const falloff = 1 - dist / 7;
       const dmg = 70 * falloff;
+      if (u.isRemote && this.netEnabled && u.netId && mine.owner?.isPlayer) {
+        this.net.publishEvent({
+          type: 'damage',
+          eventId: this._netEventId('mine-dmg'),
+          targetNetId: u.netId,
+          amount: dmg,
+          pen: 0.85,
+          weapon: 'LANDMINE',
+        });
+        continue;
+      }
+      if (u.isRemote) continue;
       const result = u.takeDamage(dmg, mine.owner, 0.85);
       if (result.lastStand && u.isPlayer) this.ui.toast('Reactive shield saved you!', 1800);
       if (result.killed) {
@@ -2090,13 +2398,20 @@ export class Game {
               hit = true;
               break;
             }
+            // Synced peer shots are visual here — authoritative damage arrives as events
+            if (p.fromNet) {
+              this.effects.push(spawnImpact(this.scene, p.pos.clone(), p.heavy));
+              hit = true;
+              break;
+            }
             if (u.isRemote && this.netEnabled && u.netId) {
               this.net.publishEvent({
                 type: 'damage',
-                eventId: `dmg:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+                eventId: this._netEventId('dmg'),
                 targetNetId: u.netId,
                 amount: p.damage,
                 pen: p.pen,
+                weapon: 'GUN',
               });
               if (p.owner.isPlayer) SFX.hit();
               this.effects.push(spawnImpact(this.scene, p.pos.clone(), p.heavy));

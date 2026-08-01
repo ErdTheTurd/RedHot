@@ -1751,6 +1751,37 @@ export function createUI(game, inventory, opts = {}) {
       } else {
         detail.innerHTML = '<p class="muted">Accessories unlock permanently and apply automatically in every match.</p>';
       }
+    } else if (invTab === 'achievements') {
+      const rows = inventory.getAchievements?.() || [];
+      const prog = inventory.achievementProgress?.() || { earned: 0, total: rows.length };
+      for (const a of rows) {
+        const el = document.createElement('button');
+        el.className = `inv-item${selectedInv === a.id ? ' selected' : ''}${a.earned ? ' equipped' : ''}`;
+        el.style.setProperty('--rarity', a.earned ? '#f0c040' : '#5a6570');
+        el.innerHTML = `
+          <strong>${a.earned ? '★' : '☆'} ${a.name}</strong>
+          <span>${a.desc}</span>
+          <em>${a.earned ? 'EARNED' : 'LOCKED'}</em>
+        `;
+        el.onclick = () => {
+          selectedInv = a.id;
+          renderInventory();
+        };
+        grid.appendChild(el);
+      }
+      if (selectedInv && rows.some((r) => r.id === selectedInv)) {
+        const a = rows.find((r) => r.id === selectedInv);
+        detail.innerHTML = `
+          <span style="color:${a.earned ? '#f0c040' : '#8a96a3'}">${a.earned ? 'EARNED' : 'LOCKED'}</span>
+          <h3>${a.name}</h3>
+          <p class="muted">${a.desc}</p>
+          <div class="stat-row"><span>How</span><strong>${a.hint || '—'}</strong></div>
+          <div class="stat-row"><span>Progress</span><strong>${prog.earned} / ${prog.total}</strong></div>
+          ${a.earned && a.at ? `<div class="stat-row"><span>Unlocked</span><strong>${new Date(a.at).toLocaleDateString()}</strong></div>` : ''}
+        `;
+      } else {
+        detail.innerHTML = `<p class="muted">Career commendations — ${prog.earned} of ${prog.total} earned. Finish matches, plant warheads, crack cases, and play live multiplayer to unlock more.</p>`;
+      }
     } else {
       for (const k of Object.values(KEYS)) {
         const n = inventory.keyCount(k.id);
@@ -1845,6 +1876,9 @@ export function createUI(game, inventory, opts = {}) {
     }
     const res = inventory.openCase(crateFocus);
     if (!res.ok) { toast(res.reason); return; }
+    for (const row of res.achievements || []) {
+      toast(`Commendation: ${row.def?.name || row.id}`, 3200);
+    }
     if (res.kind === 'item') {
       lastOpenedItem = res.item;
       lastOpenedVehicle = null;
