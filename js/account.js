@@ -130,7 +130,7 @@ export function logoutAccount() {
 }
 
 /** Rename the local operator callsign (needed to become DEV on an existing profile). */
-export async function renameAccount(username) {
+export function renameAccount(username) {
   const account = loadRaw();
   if (!account) return { ok: false, reason: 'No account on this device' };
   const check = validateUsername(username);
@@ -143,4 +143,32 @@ export async function renameAccount(username) {
 export function isDevAccount() {
   const a = loadRaw();
   return String(a?.username || '').trim().toUpperCase() === 'DEV';
+}
+
+const PREV_CALLSIGN_KEY = 'vehicle_strike_prev_callsign_v1';
+
+/** Remember the callsign used before /become-dev so /no-dev can restore it. */
+export function stashPreviousCallsign(name) {
+  const n = normalizeUsername(name);
+  if (!n || n.toUpperCase() === 'DEV') return;
+  try {
+    localStorage.setItem(PREV_CALLSIGN_KEY, n);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function takePreviousCallsign(fallback = 'Operator') {
+  try {
+    const prev = localStorage.getItem(PREV_CALLSIGN_KEY);
+    if (prev) {
+      localStorage.removeItem(PREV_CALLSIGN_KEY);
+      const check = validateUsername(prev);
+      if (check.ok) return check.username;
+    }
+  } catch {
+    /* ignore */
+  }
+  const fb = validateUsername(fallback);
+  return fb.ok ? fb.username : 'Operator';
 }

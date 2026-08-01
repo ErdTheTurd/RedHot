@@ -20,6 +20,12 @@ import { resolveQuality } from './graphics.js';
 import { toggleTriviaSkipped } from './trivia.js';
 import { isDevOperator } from './dev.js';
 import {
+  getAccount,
+  renameAccount,
+  stashPreviousCallsign,
+  takePreviousCallsign,
+} from './account.js';
+import {
   isLucky,
   isSemiLucky,
   setLucky,
@@ -1697,12 +1703,61 @@ export class Game {
       return;
     }
 
-    if (cmd === '/dev' || cmd === '/dev-help') {
-      if (!this.isDev()) {
-        this.ui.toast('DEV only — enlist with callsign DEV');
+    if (cmd === '/become-dev' || cmd === '/becomedev' || cmd === '/dev-on') {
+      if (this.isDev()) {
+        this.ui.toast('Already DEV — type /no-dev to disable');
+        SFX.ui();
         return;
       }
-      this.ui.toast('DEV: /dev-end /dev-win /dev-score /dev-host /dev-say /lucky /give-tokens — Enter opens chat', 4000);
+      const current = this.inventory?.profile?.callsign || getAccount()?.username || 'Operator';
+      stashPreviousCallsign(current);
+      const res = renameAccount('DEV');
+      if (!res.ok) {
+        this.ui.toast(res.reason || 'Could not become DEV');
+        return;
+      }
+      if (this.net) this.net.account = res.account;
+      this.inventory?.setCallsign?.('DEV');
+      if (this.player) this.player.name = 'DEV';
+      setLucky(true);
+      this.inventory?.applyLuckyBlessing?.();
+      this.applyLuckyToPlayer?.();
+      this.ui.refreshMeta?.();
+      this.ui.toast('DEV ON — full admin unlocked. Type /no-dev to disable.');
+      SFX.buy();
+      return;
+    }
+
+    if (cmd === '/no-dev' || cmd === '/nodev' || cmd === '/dev-off') {
+      if (!this.isDev()) {
+        this.ui.toast('DEV is not active');
+        SFX.ui();
+        return;
+      }
+      const restored = takePreviousCallsign('Operator');
+      const res = renameAccount(restored);
+      if (!res.ok) {
+        this.ui.toast(res.reason || 'Could not disable DEV');
+        return;
+      }
+      if (this.net) this.net.account = res.account;
+      this.inventory?.setCallsign?.(res.account.username);
+      if (this.player) this.player.name = res.account.username;
+      setLucky(false);
+      clearSemiLucky();
+      this._semiLuckyWasOn = false;
+      this.ui.refreshMeta?.();
+      this.ui.toast(`DEV OFF — callsign is ${res.account.username}`);
+      SFX.ui();
+      return;
+    }
+
+    if (cmd === '/dev' || cmd === '/dev-help') {
+      if (!this.isDev()) {
+        this.ui.toast('DEV only — type /become-dev first');
+        return;
+      }
+      this.ui.toast('DEV: /dev-end /dev-win /dev-score /dev-host /dev-say /no-dev /lucky — Enter opens chat', 4000);
       return;
     }
 
@@ -1779,8 +1834,8 @@ export class Game {
     if (cmd === '/help' || cmd === '/?') {
       this.ui.toast(
         this.isDev()
-          ? 'DEV cmds: /dev /lucky /semi-lucky /unlucky /give-tokens /give-xp · Enter = chat'
-          : 'Commands: /lucky /semi-lucky /unlucky /give-tokens /give-xp /no-questions · Enter = chat'
+          ? 'DEV cmds: /dev /no-dev /lucky /semi-lucky /unlucky /give-tokens /give-xp · Enter = chat'
+          : 'Commands: /lucky /semi-lucky /unlucky /become-dev /give-tokens /give-xp /no-questions · Enter = chat'
       );
       return;
     }
