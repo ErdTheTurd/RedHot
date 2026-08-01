@@ -14,6 +14,7 @@ import { getGraphicsPreset, setGraphicsPreset } from './graphics.js';
 import { pickTriviaQuestions, defaultPassNeed, isTriviaSkipped } from './trivia.js';
 import {
   hasAccount, getAccount, isLoggedIn, createAccount, loginAccount, logoutAccount,
+  resetAccountPassword,
 } from './account.js';
 import { isDevOperator, isDevName } from './dev.js';
 
@@ -849,6 +850,7 @@ export function createUI(game, inventory, opts = {}) {
   function wireAuth() {
     const createPanel = $('auth-create-panel');
     const loginPanel = $('auth-login-panel');
+    const forgotPanel = $('auth-forgot-panel');
     const switchToLogin = $('auth-switch-to-login');
     const createLead = $('auth-create-lead');
 
@@ -862,25 +864,29 @@ export function createUI(game, inventory, opts = {}) {
     const paintAuthPanels = (prefer = null) => {
       const existing = getAccount();
       const mode = prefer || (existing ? 'login' : 'create');
-      const showLogin = mode === 'login' && !!existing;
-      createPanel?.classList.toggle('hidden', showLogin);
+      const showForgot = mode === 'forgot';
+      const showLogin = mode === 'login' && !!existing && !showForgot;
+      const showCreate = !showLogin && !showForgot;
+      createPanel?.classList.toggle('hidden', !showCreate);
       loginPanel?.classList.toggle('hidden', !showLogin);
-      switchToLogin?.classList.toggle('hidden', !existing || showLogin);
+      forgotPanel?.classList.toggle('hidden', !showForgot);
+      switchToLogin?.classList.toggle('hidden', !existing || !showCreate);
       if (createLead) {
-        createLead.textContent = existing && !showLogin
+        createLead.textContent = existing && showCreate
           ? 'Creating a new callsign replaces the operator saved on this device and resets bank, crates, and loadout.'
           : 'Optional password locks your local profile. Online multiplayer uses your callsign when others are on the site.';
       }
-      if (existing && $('auth-login-user')) {
+      if (existing && $('auth-login-user') && showLogin) {
         $('auth-login-user').value = existing.username;
       }
-      if (existing && !existing.passHash) {
-        $('auth-login-pass-wrap')?.classList.add('hidden');
-      } else {
-        $('auth-login-pass-wrap')?.classList.remove('hidden');
+      // Always show password field on login — callsign need not match this device.
+      $('auth-login-pass-wrap')?.classList.remove('hidden');
+      if (showForgot && $('auth-forgot-user') && !$('auth-forgot-user').value) {
+        $('auth-forgot-user').value = existing?.username || $('auth-login-user')?.value || '';
       }
       showErr('auth-create-error', '');
       showErr('auth-login-error', '');
+      showErr('auth-forgot-error', '');
     };
 
     paintAuthPanels();
@@ -901,6 +907,16 @@ export function createUI(game, inventory, opts = {}) {
       paintAuthPanels('create');
       if ($('auth-create-user')) $('auth-create-user').value = '';
       if ($('auth-create-pass')) $('auth-create-pass').value = '';
+    });
+    $('btn-auth-to-forgot')?.addEventListener('click', () => {
+      SFX.ui();
+      if ($('auth-forgot-pass')) $('auth-forgot-pass').value = '';
+      if ($('auth-forgot-pass2')) $('auth-forgot-pass2').value = '';
+      paintAuthPanels('forgot');
+    });
+    $('btn-auth-forgot-to-login')?.addEventListener('click', () => {
+      SFX.ui();
+      paintAuthPanels(hasAccount() ? 'login' : 'create');
     });
 
     $('btn-auth-create')?.addEventListener('click', async () => {
@@ -936,6 +952,25 @@ export function createUI(game, inventory, opts = {}) {
       await finishAuth(res.account);
     });
 
+    $('btn-auth-forgot')?.addEventListener('click', async () => {
+      showErr('auth-forgot-error', '');
+      const p1 = String($('auth-forgot-pass')?.value || '');
+      const p2 = String($('auth-forgot-pass2')?.value || '');
+      if (p1 !== p2) {
+        showErr('auth-forgot-error', 'Passwords do not match');
+        return;
+      }
+      const res = await resetAccountPassword($('auth-forgot-user')?.value, p1);
+      if (!res.ok) {
+        showErr('auth-forgot-error', res.reason);
+        return;
+      }
+      inventory.setCallsign(res.account.username);
+      SFX.ui();
+      toast('Password updated');
+      await finishAuth(res.account);
+    });
+
     // Enter key submits
     for (const id of ['auth-create-user', 'auth-create-pass']) {
       $(id)?.addEventListener('keydown', (e) => {
@@ -945,6 +980,11 @@ export function createUI(game, inventory, opts = {}) {
     for (const id of ['auth-login-user', 'auth-login-pass']) {
       $(id)?.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') $('btn-auth-login')?.click();
+      });
+    }
+    for (const id of ['auth-forgot-user', 'auth-forgot-pass', 'auth-forgot-pass2']) {
+      $(id)?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') $('btn-auth-forgot')?.click();
       });
     }
   }

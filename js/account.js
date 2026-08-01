@@ -125,15 +125,46 @@ export async function loginAccount(username, password = '') {
 
   const check = validateUsername(username);
   if (!check.ok) return check;
-  if (check.username.toLowerCase() !== account.username.toLowerCase()) {
-    return { ok: false, reason: 'Callsign does not match this device account' };
-  }
 
   if (account.passHash) {
     const hash = await sha256Hex(`${account.salt}:${String(password || '')}`);
     if (hash !== account.passHash) return { ok: false, reason: 'Incorrect password' };
   }
 
+  // Callsign may differ from whatever was last saved on this browser — adopt the typed one.
+  if (check.username.toLowerCase() !== account.username.toLowerCase()) {
+    account.username = check.username;
+    saveRaw(account);
+  }
+
+  setLoggedIn(true);
+  return { ok: true, account };
+}
+
+/**
+ * Reset password without the old one. Typed callsign wins even if it differs
+ * from the operator currently saved on this device (or if none exists yet).
+ */
+export async function resetAccountPassword(username, newPassword = '') {
+  const check = validateUsername(username);
+  if (!check.ok) return check;
+
+  const pwd = String(newPassword || '');
+  if (pwd && pwd.length < 4) {
+    return { ok: false, reason: 'Password must be at least 4 characters (or leave blank)' };
+  }
+
+  const salt = randomId(8);
+  const passHash = pwd ? await sha256Hex(`${salt}:${pwd}`) : '';
+  const existing = loadRaw();
+  const account = {
+    username: check.username,
+    clientId: existing?.clientId || randomId(16),
+    salt,
+    passHash,
+    createdAt: existing?.createdAt || Date.now(),
+  };
+  saveRaw(account);
   setLoggedIn(true);
   return { ok: true, account };
 }
