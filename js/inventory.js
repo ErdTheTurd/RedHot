@@ -6,7 +6,7 @@ import { GEAR_ITEMS } from './gearItems.js';
 import { awardXp, levelFromXp } from './progression.js';
 import { normalizeAdsState, canWatchAd, showRewardedAd, adsRemaining, MAX_ADS_PER_DAY } from './ads.js';
 import { isLucky, isSemiLucky, pickBestByRarity, pickSemiLuckyByRarity, rarityRank } from './lucky.js';
-import { evaluateAchievements, achievementList, ACHIEVEMENTS } from './achievements.js';
+import { evaluateAchievements, achievementList } from './achievements.js';
 
 const STORAGE_KEY = 'vehicle_strike_inventory_v3';
 const LEGACY_KEYS = ['vehicle_strike_inventory_v2', 'vehicle_strike_inventory_v1'];
