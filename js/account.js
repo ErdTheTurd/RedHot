@@ -76,14 +76,27 @@ export function setLoggedIn(on) {
   }
 }
 
+/** Wipe the local operator account and session (used when creating a replacement). */
+export function clearAccount() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(SESSION_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
- * First-time only. Password is optional (“maybe a password”).
+ * Create a local operator. Password is optional (“maybe a password”).
  * Stored locally — protects this browser profile, not a cloud login server.
+ * Pass `{ replace: true }` after logout to enlist a new callsign on this device.
  */
-export async function createAccount(username, password = '') {
-  if (hasAccount()) {
+export async function createAccount(username, password = '', opts = {}) {
+  if (hasAccount() && !opts.replace) {
     return { ok: false, reason: 'An operator account already exists on this device' };
   }
+  if (opts.replace) clearAccount();
+
   const check = validateUsername(username);
   if (!check.ok) return check;
 
