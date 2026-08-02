@@ -6,6 +6,7 @@ import { GEAR_ITEMS } from './gearItems.js';
 import { awardXp, levelFromXp } from './progression.js';
 import { normalizeAdsState, canWatchAd, showRewardedAd, adsRemaining, MAX_ADS_PER_DAY } from './ads.js';
 import { isLucky, isSemiLucky, pickBestByRarity, pickSemiLuckyByRarity, rarityRank } from './lucky.js';
+import { evaluateAchievements, achievementList } from './achievements.js';
 
 const STORAGE_KEY = 'vehicle_strike_inventory_v3';
 const LEGACY_KEYS = ['vehicle_strike_inventory_v2', 'vehicle_strike_inventory_v1'];
@@ -41,7 +42,22 @@ function blank() {
     accessories: {},
     loadoutConsumables: [],
     ads: { date: new Date().toISOString().slice(0, 10), count: 0 },
-    stats: { matches: 0, wins: 0, opens: 0 },
+    stats: {
+      matches: 0,
+      wins: 0,
+      opens: 0,
+      kills: 0,
+      plants: 0,
+      defuses: 0,
+      extracts: 0,
+      bestKills: 0,
+      mpMatches: 0,
+      winsStrike: 0,
+      winsSkirmish: 0,
+      winsSiege: 0,
+      mapsPlayed: {},
+    },
+    achievements: {},
     profile: {
       xp: 0,
       level: 1,
@@ -87,7 +103,12 @@ function migrateLegacy(data) {
   }
 
   const profile = { ...base.profile, ...(data.profile || {}) };
-  const stats = { ...base.stats, ...(data.stats || {}) };
+  const stats = {
+    ...base.stats,
+    ...(data.stats || {}),
+    mapsPlayed: { ...(base.stats.mapsPlayed || {}), ...((data.stats && data.stats.mapsPlayed) || {}) },
+  };
+  const achievements = { ...(data.achievements || {}) };
   const cases = remapLegacyCrates({ ...base.cases, ...(data.cases || {}) }, LEGACY_CASE_MAP);
   const keys = remapLegacyCrates({ ...base.keys, ...(data.keys || {}) }, LEGACY_KEY_MAP);
   // Strip legacy case/key ids that are no longer sold
@@ -113,6 +134,7 @@ function migrateLegacy(data) {
       : [],
     ads: normalizeAdsState(data.ads),
     stats,
+    achievements,
     profile: awardXp({ ...profile, stats }, 0),
   };
 }
@@ -157,6 +179,28 @@ export class InventoryService {
   addWallet(n) {
     this.data.wallet = Math.max(0, Math.floor(this.data.wallet + n));
     this.persist();
+    return this.checkAchievements();
+  }
+
+  /** @returns {{ id: string, def: object }[]} newly unlocked commendations */
+  checkAchievements(ctx = {}) {
+    const unlocked = evaluateAchievements(this.data, ctx);
+    if (unlocked.length) this.persist();
+    return unlocked;
+  }
+
+  getAchievements() {
+    return achievementList().map((def) => ({
+      ...def,
+      earned: !!this.data.achievements?.[def.id],
+      at: this.data.achievements?.[def.id]?.at || null,
+    }));
+  }
+
+  achievementProgress() {
+    const all = achievementList();
+    const earned = all.filter((a) => this.data.achievements?.[a.id]).length;
+    return { earned, total: all.length };
   }
 
   ownsVehicle(id) {
@@ -300,8 +344,9 @@ export class InventoryService {
       } else {
         this.data.items[item.id] = (this.data.items[item.id] || 0) + (isLucky() ? 99 : 1);
       }
+      const achievements = this.checkAchievements();
       this.persist();
-      return { ok: true, item, duplicate, kind: 'item' };
+      return { ok: true, item, duplicate, kind: 'item', achievements };
     }
 
     const vehicle = rollVehicleFromCase(caseId);
@@ -313,8 +358,9 @@ export class InventoryService {
     }
     const isNew = this.unlockVehicle(vehicle.id);
     this.data.stats.opens += 1;
+    const achievements = this.checkAchievements();
     this.persist();
-    return { ok: true, vehicle, duplicate: !isNew, kind: 'vehicle' };
+    return { ok: true, vehicle, duplicate: !isNew, kind: 'vehicle', achievements };
   }
 
   /** Dump OP loot when /lucky turns on. */
@@ -542,12 +588,40 @@ export class InventoryService {
     return { ok: true, gained: skin.sellPrice };
   }
 
-  recordMatch(won, deposit, xpGain = 0) {
-    this.data.stats.matches += 1;
-    if (won) this.data.stats.wins += 1;
-    this.addWallet(deposit);
+  recordMatch(won, deposit, xpGain = 0, extras = {}) {
+    const s = this.data.stats;
+    s.matches += 1;
+    if (won) s.wins += 1;
+    const kills = Math.max(0, Math.floor(extras.kills || 0));
+    s.kills = (s.kills || 0) + kills;
+    s.bestKills = Math.max(s.bestKills || 0, kills);
+    if (extras.extracted) s.extracts = (s.extracts || 0) + 1;
+    if (extras.multiplayer) s.mpMatches = (s.mpMatches || 0) + 1;
+    if (won && extras.modeId === 'strike') s.winsStrike = (s.winsStrike || 0) + 1;
+    if (won && extras.modeId === 'skirmish') s.winsSkirmish = (s.winsSkirmish || 0) + 1;
+    if (won && extras.modeId === 'siege') s.winsSiege = (s.winsSiege || 0) + 1;
+    if (extras.mapId) {
+      s.mapsPlayed = { ...(s.mapsPlayed || {}), [extras.mapId]: true };
+    }
+    this.data.wallet = Math.max(0, Math.floor(this.data.wallet + deposit));
     if (xpGain > 0) this.addXp(xpGain);
-    else this.persist();
+    const achievements = this.checkAchievements({ matchKills: kills });
+    this.persist();
+    return { achievements };
+  }
+
+  notePlant() {
+    this.data.stats.plants = (this.data.stats.plants || 0) + 1;
+    const achievements = this.checkAchievements();
+    this.persist();
+    return achievements;
+  }
+
+  noteDefuse() {
+    this.data.stats.defuses = (this.data.stats.defuses || 0) + 1;
+    const achievements = this.checkAchievements();
+    this.persist();
+    return achievements;
   }
 
   get profile() {
