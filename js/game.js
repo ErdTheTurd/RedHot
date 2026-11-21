@@ -92,6 +92,8 @@ export class Game {
     this.camPitch = 0.45;
     this.mines = [];
     this._gearApplied = false;
+    this.camShake = 0;
+    this.recoilKick = 0;
   }
 
   applyMapTheme() {
@@ -487,8 +489,7 @@ export class Game {
     if (typeof s.flightAlt === 'number') u.flightAlt = s.flightAlt;
     if (wasAlive && s.alive === false && u.isRemote && !u.dying) {
       this.beginDeathFall(u);
-      const killer = this.units.find((x) => x.isPlayer) || u;
-      this.ui?.killFeed?.(killer, u, 'HIT');
+      // Don't invent a killer — net damage path already feeds the killfeed
     }
 
     // Remotes often only have scout_tracker in loadout — force the networked craft
@@ -507,11 +508,11 @@ export class Game {
     // Don't fight the transform animation on position
     if (u.transformLock) {
       u.mesh.rotation.y = u.yaw;
-      u.mesh.visible = u.alive !== false;
+      u.mesh.visible = u.alive !== false || !!u.dying;
       return;
     }
 
-    if (typeof s.x === 'number') {
+    if (typeof s.x === 'number' && !u.dying) {
       const dx = s.x - u.mesh.position.x;
       const dy = (s.y ?? u.mesh.position.y) - u.mesh.position.y;
       const dz = s.z - u.mesh.position.z;
@@ -523,8 +524,8 @@ export class Game {
         u.mesh.position.z += dz * lerp;
       }
     }
-    u.mesh.rotation.y = u.yaw;
-    u.mesh.visible = u.alive !== false;
+    if (!u.dying) u.mesh.rotation.y = u.yaw;
+    u.mesh.visible = u.alive !== false || !!u.dying;
     if (u.mesh.visible === false && s.alive !== false && typeof s.alive === 'undefined') {
       u.mesh.visible = true;
     }
@@ -595,12 +596,31 @@ export class Game {
 
   _onNetMeta(data) {
     if (!this.running || !data || this.isNetHost) return;
+
+    // Host advanced the round — resync local spawns/state so we share the same match
+    if (typeof data.roundNumber === 'number' && data.roundNumber > this.roundNumber && !this._finishing) {
+      this.roundNumber = data.roundNumber - 1;
+      this.beginRound();
+    }
+
     if (typeof data.timer === 'number') this.timer = data.timer;
     if (data.phase) {
       this.phase = data.phase;
       this.phaseLabel = data.phaseLabel || data.phase.toUpperCase();
     }
-    if (data.score) this.score = { ...data.score };
+    if (data.score) {
+      this.score = { ...data.score };
+      const need = this.mode?.roundsToWin || ROUNDS_TO_WIN;
+      if (
+        !this._finishing
+        && (this.score.raiders >= need || this.score.sentinels >= need)
+      ) {
+        const playerWon =
+          (this.score.raiders > this.score.sentinels && this.player?.team === TEAMS.RAIDERS)
+          || (this.score.sentinels > this.score.raiders && this.player?.team === TEAMS.SENTINELS);
+        this.finishMatch(!!playerWon, 'Match complete');
+      }
+    }
     if (data.frags) this.frags = { ...data.frags };
     if (data.buyVotes) this.buyVotes = { ...data.buyVotes };
     if (data.bomb) {
@@ -734,10 +754,39 @@ export class Game {
     if (data.type === 'damage' && data.targetNetId === this._myNetId && this.player) {
       const attacker = this.units.find((u) => u.netId === data.from) || this.player;
       const result = this.player.takeDamage(data.amount || 0, attacker, data.pen ?? 1);
+      if (result.dmg > 0) {
+        this.camShake = Math.max(this.camShake, 0.18 + Math.min(0.35, result.dmg / 120));
+      }
       if (result.killed) {
         this.beginDeathFall(this.player);
         this.ui?.killFeed?.(attacker, this.player, data.weapon || 'HIT');
+        this._transferBombFrom(this.player);
+        this.checkElimination();
+        this.checkModeObjectives();
       }
+    }
+  }
+
+  /** Pass the warhead to another living raider (local + optional net publish). */
+  _transferBombFrom(dead) {
+    if (!dead?.hasBomb) return;
+    dead.hasBomb = false;
+    const living = this.units.filter((x) => x.alive && x.team === TEAMS.RAIDERS && x !== dead);
+    if (!living.length) {
+      this.bomb.carrier = null;
+      return;
+    }
+    const n = living[Math.floor(Math.random() * living.length)];
+    n.hasBomb = true;
+    this.bomb.carrier = n;
+    if (n.isPlayer) this.ui?.toast?.('You recovered the warhead');
+    if (this.netEnabled && (this.isNetHost || dead.isPlayer)) {
+      this.net?.publishEvent?.({
+        type: 'bombCarrier',
+        eventId: this._netEventId('carrier-xfer'),
+        carrierNetId: n.netId || (n.isPlayer ? this._myNetId : null),
+        carrierId: n.id,
+      });
     }
   }
 
@@ -887,10 +936,14 @@ export class Game {
       u.resetForRound(spawn, true);
       if (u.isPlayer && this.inventory) {
         u.applyAccessories(this.inventory.accessoryMods());
-        // Keep leftover match landmines / ordnance extras across rounds within a match
+        // Re-apply warheads extras each round so bomb racks stay loaded through the match
         if (u.matchMods) {
-          u.bombs = Math.max(u.bombs || 0, (u.vehicle.bombs || 0) + (u.accMods?.bombCap || 0));
-          u.torpedoes = Math.max(u.torpedoes || 0, (u.vehicle.torpedoes || 0) + (u.accMods?.torpedoCap || 0));
+          const hullBombs = (u.vehicle.bombs || 0) + (u.accMods?.bombCap || 0);
+          const hullTorps = (u.vehicle.torpedoes || 0) + (u.accMods?.torpedoCap || 0);
+          u.bombs = Math.max(u.bombs || 0, hullBombs + (u.matchMods.bombs || 0));
+          u.torpedoes = Math.max(u.torpedoes || 0, hullTorps + (u.matchMods.torpedoes || 0));
+          u.landmines = Math.max(u.landmines || 0, u.matchMods.landmines || 0);
+          u._stashOrdnance?.();
         }
       }
     }
@@ -924,7 +977,7 @@ export class Game {
       this.ui.showBanner(this.mode.name.toUpperCase(), 'Fight');
     } else {
       this.ui.showBanner(`ROUND ${this.roundNumber}`, this.mode?.name || 'Buy phase');
-      this.ui.toast('Press B to open arsenal · X plant landmine');
+      this.ui.toast('Buy phase: B arsenal · Live: F gun · B bombs · T torpedo · X mine');
     }
     if (!this.buyOpen && this.player.alive) {
       // auto hint only
@@ -962,7 +1015,7 @@ export class Game {
     if (unit.isPlayer) {
       this._toastAchievements(this.inventory?.notePlant?.());
     }
-    if (this.netEnabled && unit.isPlayer) {
+    if (this.netEnabled && (unit.isPlayer || this.isNetHost)) {
       this.net?.publishEvent?.({
         type: 'plant',
         eventId: this._netEventId(`plant-${site}`),
@@ -982,7 +1035,7 @@ export class Game {
     if (unit?.isPlayer) {
       this._toastAchievements(this.inventory?.noteDefuse?.());
     }
-    if (this.netEnabled && unit?.isPlayer) {
+    if (this.netEnabled && (unit?.isPlayer || this.isNetHost)) {
       this.net?.publishEvent?.({
         type: 'defuse',
         eventId: this._netEventId('defuse'),
@@ -1097,7 +1150,16 @@ export class Game {
   }
 
   detonateOrdnance(p) {
-    this.spawnExplosion(p.pos.clone());
+    if (p._detonated) return;
+    p._detonated = true;
+    const boomScale = p.kind === 'bomb' ? 1.55 : p.kind === 'torpedo' ? 1.35 : 1.15;
+    const boom = spawnExplosion(
+      this.scene,
+      p.pos.clone().add(new THREE.Vector3(0, 1.1, 0)),
+      boomScale
+    );
+    this.effects.push(boom);
+    this.camShake = Math.max(this.camShake, p.kind === 'bomb' ? 0.55 : 0.42);
     // Peers already show the blast from the synced projectile — skip local damage
     if (p.fromNet) return;
     const radius = p.radius || 6;
@@ -1507,6 +1569,8 @@ export class Game {
 
     if (unit.isPlayer) {
       SFX.fire(heavy);
+      this.recoilKick = Math.min(0.55, this.recoilKick + (heavy ? 0.22 : 0.1));
+      this.camShake = Math.max(this.camShake, heavy ? 0.12 : 0.06);
       document.getElementById('crosshair')?.classList.add('firing');
       setTimeout(() => document.getElementById('crosshair')?.classList.remove('firing'), 60);
     }
@@ -1515,10 +1579,18 @@ export class Game {
 
   tryDropBomb(unit) {
     if (!unit?.alive) return;
-    if (this.phase !== PHASE.LIVE && this.phase !== PHASE.BOMB) return;
-    if (unit.vehicle.domain !== 'air') return;
+    if (this.phase !== PHASE.LIVE && this.phase !== PHASE.BOMB) {
+      if (unit.isPlayer) this.ui.toast('Bombs only during live combat');
+      return;
+    }
+    if (unit.vehicle.domain !== 'air') {
+      if (unit.isPlayer) this.ui.toast('Switch to a jet (3) to drop bombs');
+      return;
+    }
     if ((unit.bombs || 0) <= 0) {
-      if (unit.isPlayer) this.ui.toast('No bombs loaded');
+      if (unit.isPlayer) {
+        this.ui.toast('No bombs loaded — equip a Bomb Rack in Inventory or use a bomber');
+      }
       return;
     }
     if (unit.secondaryCooldown > 0) return;
@@ -1551,6 +1623,8 @@ export class Game {
     this._publishShot('bomb', shot);
     if (unit.isPlayer) {
       SFX.fire(true);
+      this.recoilKick = Math.min(0.6, this.recoilKick + 0.18);
+      this.camShake = Math.max(this.camShake, 0.14);
       this.ui.toast(`Bomb away · ${unit.bombs} left`, 900);
     }
   }
@@ -1731,6 +1805,12 @@ export class Game {
         }
       }
 
+      // Peers wait for mineBoom for remote mines — owner/host simulates triggers
+      if (mine.fromNet) {
+        remain.push(mine);
+        continue;
+      }
+
       let exploded = false;
       for (const u of this.units) {
         if (!u.alive || !mine.armed) continue;
@@ -1748,12 +1828,14 @@ export class Game {
   }
 
   detonateMine(mine, victim) {
+    if (!mine?.armed) return;
     mine.armed = false;
     if (mine.mesh) this.scene.remove(mine.mesh);
     const boomPos = mine.pos.clone().add(new THREE.Vector3(0, 0.8, 0));
     this.spawnExplosion(boomPos);
+    this.camShake = Math.max(this.camShake, 0.4);
     SFX.kill();
-    if (this.netEnabled && mine.netId && (mine.owner?.isPlayer || mine.fromNet)) {
+    if (this.netEnabled && mine.netId && mine.owner?.isPlayer) {
       this.net?.publishEvent?.({
         type: 'mineBoom',
         eventId: this._netEventId('mineBoom'),
@@ -1792,6 +1874,7 @@ export class Game {
         }
         this.beginDeathFall(u);
         this.ui.killFeed(mine.owner || u, u, 'LANDMINE');
+        this._transferBombFrom(u);
         this.checkElimination();
         this.checkModeObjectives();
       }
@@ -1881,7 +1964,7 @@ export class Game {
     // F = guns · B = jet bombs (live) · T = ship torpedoes · X = landmine
     if (this.input.pressed('KeyF')) this.tryFire(p);
     if (this.input.consumePress('KeyB') && this.phase !== PHASE.BUY && !this.buyOpen) {
-      if (p.vehicle.domain === 'air') this.tryDropBomb(p);
+      this.tryDropBomb(p);
     }
     if (this.input.consumePress('KeyT')) this.tryFireTorpedo(p);
     if (this.input.consumePress('KeyX')) this.tryPlantMine(p);
@@ -2286,6 +2369,10 @@ export class Game {
 
   /** Larger hit volumes so tanks/ships/jets are reliably damageable. */
   hitRadiusFor(unit, projectile = null) {
+    // Blast radius is for detonation falloff — not mid-air proximity hitbox
+    if (projectile?.kind === 'bomb' || projectile?.kind === 'torpedo') {
+      return projectile.proxRadius || (projectile.kind === 'bomb' ? 2.4 : 2.8);
+    }
     if (projectile?.radius) return projectile.radius;
     const d = unit.vehicle?.domain;
     if (d === 'sea') return 4.4;
@@ -2306,6 +2393,7 @@ export class Game {
   spawnExplosion(pos) {
     const boom = spawnExplosion(this.scene, pos.clone().add(new THREE.Vector3(0, 1.1, 0)), 1.15);
     this.effects.push(boom);
+    this.camShake = Math.max(this.camShake, 0.28);
   }
 
   /** Initial blast, then fiery tumbling wreck until ground impact. */
@@ -2366,6 +2454,9 @@ export class Game {
         if (p.mesh) {
           p.mesh.position.copy(p.pos);
           p.mesh.rotation.x += dt * 4;
+          if (p.mesh.userData.trail?.material) {
+            p.mesh.userData.trail.material.opacity = 0.25 + Math.random() * 0.4;
+          }
         }
       } else {
         p.pos.addScaledVector(p.dir, p.speed * dt);
@@ -2379,8 +2470,13 @@ export class Game {
         }
       }
 
-      let hit = p.life <= 0;
-      if (p.kind === 'bomb') {
+      let hit = false;
+      if (p.life <= 0) {
+        hit = true;
+        if (p.kind === 'bomb' || p.kind === 'torpedo') this.detonateOrdnance(p);
+        else this.effects.push(spawnImpact(this.scene, p.pos.clone(), p.heavy));
+      }
+      if (!hit && p.kind === 'bomb') {
         const ground = this.map.groundHeight(p.pos.x, p.pos.z);
         if (p.pos.y <= ground + 0.4) {
           hit = true;
@@ -2431,18 +2527,9 @@ export class Game {
               this.beginDeathFall(u);
               this.ui.killFeed(p.owner, u, p.owner.vehicle.name);
               this.ui.toast(p.owner.isPlayer ? `Destroyed ${u.name}` : `${p.owner.name} wrecked ${u.name}`);
+              this._transferBombFrom(u);
               this.checkElimination();
               this.checkModeObjectives();
-              if (u.hasBomb) {
-                u.hasBomb = false;
-                const living = this.units.filter((x) => x.alive && x.team === TEAMS.RAIDERS);
-                if (living.length) {
-                  const n = living[Math.floor(Math.random() * living.length)];
-                  n.hasBomb = true;
-                  this.bomb.carrier = n;
-                  if (n.isPlayer) this.ui.toast('You recovered the warhead');
-                }
-              }
             }
             hit = true;
             break;
@@ -2456,7 +2543,8 @@ export class Game {
             p.pos.z >= c.min.z && p.pos.z <= c.max.z &&
             p.pos.y <= c.max.y
           ) {
-            this.effects.push(spawnImpact(this.scene, p.pos.clone(), p.heavy));
+            if (p.kind === 'bomb' || p.kind === 'torpedo') this.detonateOrdnance(p);
+            else this.effects.push(spawnImpact(this.scene, p.pos.clone(), p.heavy));
             hit = true;
             break;
           }
@@ -2520,24 +2608,38 @@ export class Game {
     }
   }
 
-  updateCamera() {
+  updateCamera(dt = 0.016) {
     const p = this.player;
     if (!p) return;
+    this.camShake = Math.max(0, (this.camShake || 0) - dt * 2.4);
+    this.recoilKick = Math.max(0, (this.recoilKick || 0) - dt * 3.2);
     const target = (p.alive || p.dying) ? p.mesh.position : new THREE.Vector3(0, 0, 0);
     const dist = this.camDist;
     const height = this.camHeight + (p.vehicle?.domain === 'air' ? 4 : 0);
     const yaw = this.camYaw;
-    const pitch = this.camPitch;
+    const pitch = this.camPitch + (this.recoilKick || 0) * 0.35;
     const offset = new THREE.Vector3(
       -Math.sin(yaw) * Math.cos(pitch) * dist,
       height + Math.sin(pitch) * 4,
       -Math.cos(yaw) * Math.cos(pitch) * dist
     );
     const desired = target.clone().add(offset);
+    if (this.camShake > 0.001) {
+      const s = this.camShake;
+      desired.x += (Math.random() - 0.5) * s * 1.8;
+      desired.y += (Math.random() - 0.5) * s * 1.2;
+      desired.z += (Math.random() - 0.5) * s * 1.8;
+    }
     this.camera.position.lerp(desired, 0.15);
     const look = target.clone();
     look.y += 1.5;
     this.camera.lookAt(look);
+
+    // Subtle barrel kick on the local vehicle mesh
+    if (p.mesh && p.alive && !p.dying && !p.transformLock) {
+      const kick = this.recoilKick || 0;
+      p.mesh.rotation.x = THREE.MathUtils.lerp(p.mesh.rotation.x || 0, -kick * 0.55, 0.35);
+    }
 
     if (p.flashT > 0) {
       document.getElementById('damage-fx').style.opacity = Math.min(0.95, 0.55 + p.flashT * 0.2);
@@ -2625,7 +2727,7 @@ export class Game {
       this.bomb.mesh.position.y = 1.2 + Math.sin(performance.now() * 0.008) * 0.1;
     }
 
-    this.updateCamera();
+    this.updateCamera(dt);
     this.ui.updateHud();
     this.ui.updateScoreboard(this.input.pressed('Tab'));
   }

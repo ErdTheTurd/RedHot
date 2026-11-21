@@ -67,12 +67,12 @@ async function boot() {
     try {
       composer = new EffectComposer(renderer);
       composer.addPass(new RenderPass(scene, camera));
-      // Stronger Ultra bloom — spectacle without washing out the map
+      // Soft Ultra bloom — spectacle without washing out the map or killing laptop FPS
       bloom = new UnrealBloomPass(
         new THREE.Vector2(window.innerWidth, window.innerHeight),
-        0.34,
-        0.52,
-        0.82
+        q.bloomStrength ?? 0.22,
+        q.bloomRadius ?? 0.48,
+        q.bloomThreshold ?? 0.86
       );
       composer.addPass(bloom);
       composer.addPass(new OutputPass());
