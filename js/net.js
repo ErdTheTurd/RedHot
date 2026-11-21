@@ -29,6 +29,8 @@ export class NetClient {
     this.isLobbyHost = false;
     this.matchId = null;
     this.isMatchHost = false;
+    this._priorLobbyId = null;
+    this._lobbyPeers = new Map(); // clientId -> last hello ts (host election)
     this._beatTimer = null;
     this._visHandler = null;
     this._listeners = {
@@ -66,7 +68,13 @@ export class NetClient {
 
   async connect() {
     if (!this.clientId) throw new Error('Account required before connecting');
-    if (this.client) return this.connected;
+    if (this.client?.connected) return true;
+    // Failed prior attempt left a dead client that blocked every retry
+    if (this.client) {
+      try { this.client.end(true); } catch { /* ignore */ }
+      this.client = null;
+      this.connected = false;
+    }
 
     this.client = mqtt.connect(BROKER_URL, {
       clientId: `vs_${this.clientId.slice(0, 18)}`,
@@ -76,17 +84,24 @@ export class NetClient {
       protocolVersion: 4,
     });
 
-    await new Promise((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error('Online relay timed out')), 14000);
-      this.client.once('connect', () => {
-        clearTimeout(t);
-        resolve();
+    try {
+      await new Promise((resolve, reject) => {
+        const t = setTimeout(() => reject(new Error('Online relay timed out')), 14000);
+        this.client.once('connect', () => {
+          clearTimeout(t);
+          resolve();
+        });
+        this.client.once('error', (err) => {
+          clearTimeout(t);
+          reject(err);
+        });
       });
-      this.client.once('error', (err) => {
-        clearTimeout(t);
-        reject(err);
-      });
-    });
+    } catch (err) {
+      try { this.client?.end(true); } catch { /* ignore */ }
+      this.client = null;
+      this.connected = false;
+      throw err;
+    }
 
     this.connected = true;
     this._emit('connection', { connected: true });
@@ -213,10 +228,32 @@ export class NetClient {
         ids.add(p.clientId);
       }
     }
+    // Hellos arrive before presence TTL — include them so two browsers don't both self-elect
+    const now = Date.now();
+    for (const [id, ts] of this._lobbyPeers) {
+      if (now - ts > 14000) this._lobbyPeers.delete(id);
+      else ids.add(id);
+    }
     const sorted = [...ids].sort();
     const next = sorted[0] === this.clientId;
     this.isLobbyHost = next;
     return next;
+  }
+
+  noteLobbyHello(clientId) {
+    if (!clientId) return;
+    this._lobbyPeers.set(clientId, Date.now());
+  }
+
+  /** Wipe retained lobby start so the next joiner is not yanked into a dead match. */
+  clearRetainedStart(lobbyId = null) {
+    const id = lobbyId || this._priorLobbyId || this.lobbyId;
+    if (!id || !this.client?.connected) return;
+    try {
+      this.client.publish(topic('lobby', id, 'start'), '', { qos: 1, retain: true });
+    } catch {
+      /* ignore */
+    }
   }
 
   /** Force host claim (DEV only — caller must gate). */
@@ -230,8 +267,11 @@ export class NetClient {
   enterSearch({ mapId, modeId, team }) {
     const lobbyId = theaterLobbyId(mapId, modeId);
     this.lobbyId = lobbyId;
+    this._priorLobbyId = lobbyId;
     this.matchId = null;
     this.isMatchHost = false;
+    this._lobbyPeers = new Map();
+    this._lobbyPeers.set(this.clientId, Date.now());
     this._resubscribe();
     this.setStatus('searching', { mapId, modeId, team, lobbyId });
     this.electLobbyHost();
@@ -301,23 +341,25 @@ export class NetClient {
 
   /** Drop lobby subscription/state without touching an active match. */
   clearLobby({ clearStart = false } = {}) {
-    // Only wipe retained start when abandoning a lobby (not when transitioning to a match)
-    if (clearStart && this.lobbyId && this.client?.connected && !this.matchId) {
-      try {
-        this.client.publish(topic('lobby', this.lobbyId, 'start'), '', { qos: 1, retain: true });
-      } catch {
-        /* ignore */
-      }
-    }
+    if (clearStart) this.clearRetainedStart(this.lobbyId || this._priorLobbyId);
     this.lobbyId = null;
     this.isLobbyHost = false;
+    this._lobbyPeers = new Map();
     this._resubscribe();
   }
 
   leaveLobby() {
-    this.clearLobby({ clearStart: true });
+    // Always clear retained start — otherwise the next browser into this theater
+    // is yanked into a dead matchId from HiveMQ's retained message.
+    const lobby = this.lobbyId || this._priorLobbyId;
+    this.clearRetainedStart(lobby);
+    this.lobbyId = null;
+    this._priorLobbyId = null;
+    this.isLobbyHost = false;
+    this._lobbyPeers = new Map();
     this.matchId = null;
     this.isMatchHost = false;
+    this._resubscribe();
     this.setStatus('menu', {});
   }
 
@@ -326,6 +368,7 @@ export class NetClient {
     this.isMatchHost = !!isHost;
     // Keep lobbyId briefly for start re-publish, then drop hello/state noise
     const priorLobby = this.lobbyId;
+    if (priorLobby) this._priorLobbyId = priorLobby;
     this.lobbyId = null;
     this.isLobbyHost = false;
     this._resubscribe();
@@ -436,14 +479,24 @@ export class NetClient {
     if (kind === 'lobby' && parts[4] === this.lobbyId) {
       const ch = parts[5];
       if (ch === 'state') this._emit('lobby', { type: 'state', data });
-      else if (ch === 'hello') this._emit('lobby', { type: 'hello', data });
-      else if (ch === 'start') this._emit('lobby', { type: 'start', data });
-      else if (ch === 'chat') this._emit('chat', data);
+      else if (ch === 'hello') {
+        if (data?.clientId) this.noteLobbyHello(data.clientId);
+        this._emit('lobby', { type: 'hello', data });
+      } else if (ch === 'start') {
+        // Drop empty retain clears and ancient HiveMQ leftovers
+        if (!data?.matchId) return;
+        const age = Date.now() - (data.ts || 0);
+        if (age > 20000 || age < -5000) return;
+        this._emit('lobby', { type: 'start', data });
+      } else if (ch === 'chat') this._emit('chat', data);
       return;
     }
 
-    // Accept retained/late start for our theater even if lobbyId already cleared
+    // Accept late start for our theater even if lobbyId already cleared (not stale retain)
     if (kind === 'lobby' && parts[5] === 'start' && data?.matchId && !this.matchId) {
+      const age = Date.now() - (data.ts || 0);
+      if (age > 20000 || age < -5000) return;
+      if (this.status !== 'searching' && this.status !== 'lobby') return;
       const expected = theaterLobbyId(this.meta.mapId, this.meta.modeId);
       if (parts[4] === expected || (data.mapId === this.meta.mapId && data.modeId === this.meta.modeId)) {
         this._emit('lobby', { type: 'start', data });

@@ -443,6 +443,10 @@ export function createUI(game, inventory, opts = {}) {
       // Always rebuild from live members so peers hello'd in are on the start roster
       if (netMode && net) {
         if (iAmDev()) net.forceLobbyHost?.();
+        // Re-elect right before start so two browsers don't both publish different matchIds
+        for (const m of mmLobbyMembers.values()) {
+          if (m.clientId) net.noteLobbyHello?.(m.clientId);
+        }
         net.electLobbyHost?.();
         rebuildRosterFromMembers();
       }
@@ -537,6 +541,7 @@ export function createUI(game, inventory, opts = {}) {
         username: d.username || 'Operator',
         team: d.team === TEAMS.SENTINELS ? TEAMS.SENTINELS : TEAMS.RAIDERS,
       });
+      net?.noteLobbyHello?.(d.clientId);
       net?.electLobbyHost?.();
       updateMmDeployLabel();
       if (net?.isLobbyHost) {
@@ -590,11 +595,20 @@ export function createUI(game, inventory, opts = {}) {
     } else if (msg.type === 'start' && msg.data) {
       // Host already launching; also ignore MQTT echo after attachMatch clears isLobbyHost
       if (net?.isLobbyHost || mmLaunching) return;
-      launchMatchFromMm(msg.data);
+      const d = msg.data;
+      if (!d.matchId) return;
+      // HiveMQ retains lobby start forever — reject leftovers from earlier sessions
+      const age = Date.now() - (d.ts || 0);
+      if (age > 20000 || age < -5000) {
+        console.warn('[mp] ignoring stale lobby start', { age, matchId: d.matchId });
+        return;
+      }
+      if (net?.status !== 'searching' && net?.status !== 'lobby') return;
+      launchMatchFromMm(d);
     }
   }
 
-  function startMatchmaking(team) {
+  async function startMatchmaking(team) {
     stopMatchmaking(false);
     mmTeam = team;
     mmSecondsLeft = MM_WAIT_SEC;
@@ -607,6 +621,12 @@ export function createUI(game, inventory, opts = {}) {
     if ($('mm-countdown')) $('mm-countdown').textContent = formatMmClock(mmSecondsLeft);
     renderMmSlots();
     SFX.ui();
+
+    // Retry relay here — a failed boot connect used to permanently force offline MM
+    if (net && !net.connected) {
+      if ($('mm-sub')) $('mm-sub').textContent = 'Connecting to live relay…';
+      await ensureNetConnected();
+    }
 
     mmNetMode = !!(net?.connected);
     if (mmNetMode) {
@@ -989,16 +1009,25 @@ export function createUI(game, inventory, opts = {}) {
     }
   }
 
+  async function ensureNetConnected() {
+    if (!net) return false;
+    if (net.connected) return true;
+    try {
+      await net.connect();
+      toast('Online relay connected');
+      renderOnlinePanel(net.onlineOperators?.() || []);
+      return true;
+    } catch (e) {
+      console.warn(e);
+      return false;
+    }
+  }
+
   async function finishAuth(account) {
     if (net) {
       net.account = account;
-      try {
-        await net.connect();
-        toast('Online relay connected');
-      } catch (e) {
-        console.warn(e);
-        toast('Playing offline — relay unavailable');
-      }
+      const ok = await ensureNetConnected();
+      if (!ok) toast('Playing offline — relay unavailable (will retry on Deploy)');
     }
     inventory.setCallsign(account.username);
     refreshMeta();

@@ -490,6 +490,11 @@ export class Game {
     if (wasAlive && s.alive === false && u.isRemote && !u.dying) {
       this.beginDeathFall(u);
       // Don't invent a killer — net damage path already feeds the killfeed
+      if (this.isNetHost) {
+        this._transferBombFrom(u);
+        this.checkElimination();
+        this.checkModeObjectives();
+      }
     }
 
     // Remotes often only have scout_tracker in loadout — force the networked craft
@@ -597,8 +602,12 @@ export class Game {
   _onNetMeta(data) {
     if (!this.running || !data || this.isNetHost) return;
 
-    // Host advanced the round — resync local spawns/state so we share the same match
+    // Host advanced the round — cancel any local timer and resync so we share the match
     if (typeof data.roundNumber === 'number' && data.roundNumber > this.roundNumber && !this._finishing) {
+      if (this._roundTimer) {
+        clearTimeout(this._roundTimer);
+        this._roundTimer = null;
+      }
       this.roundNumber = data.roundNumber - 1;
       this.beginRound();
     }
@@ -613,6 +622,7 @@ export class Game {
       const need = this.mode?.roundsToWin || ROUNDS_TO_WIN;
       if (
         !this._finishing
+        && data.phase === PHASE.END
         && (this.score.raiders >= need || this.score.sentinels >= need)
       ) {
         const playerWon =
@@ -707,7 +717,12 @@ export class Game {
       if (this.bomb.planted) {
         this.clearBomb();
         SFX.roundWin();
-        this.endRound?.(TEAMS.SENTINELS, 'Warhead defused');
+        // Host owns endRound; non-host gets score/phase from meta
+        if (!this.netEnabled || this.isNetHost) {
+          this.endRound?.(TEAMS.SENTINELS, 'Warhead defused');
+        } else {
+          this.ui?.showBanner?.('WARHEAD DEFUSED', 'Sentinels hold');
+        }
       }
       return;
     }
@@ -1047,6 +1062,9 @@ export class Game {
   endRound(winner, reason) {
     if (this.phase === PHASE.END) return;
     if (this.mode?.freeRoam) return;
+    // Host owns score / round advance; clients follow match meta (avoids double beginRound)
+    if (this.netEnabled && !this.isNetHost) return;
+
     this.phase = PHASE.END;
     this.phaseLabel = 'ROUND';
 
@@ -1084,7 +1102,11 @@ export class Game {
       return;
     }
 
-    setTimeout(() => this.beginRound(), 3200);
+    if (this._roundTimer) clearTimeout(this._roundTimer);
+    this._roundTimer = setTimeout(() => {
+      this._roundTimer = null;
+      this.beginRound();
+    }, 3200);
   }
 
   finishMatch(playerWon, reason = '') {
@@ -2564,15 +2586,17 @@ export class Game {
       this.queueRespawnDead(2.8);
       return;
     }
+    // Non-host: still allow frag/siege soft respawn logic locally, but round end is host-only
     if (this.mode?.fragLimit) {
-      this.checkModeObjectives();
+      if (!this.netEnabled || this.isNetHost) this.checkModeObjectives();
       this.queueRespawnDead(2.5);
       return;
     }
     if (this.mode?.bots === 'waves') {
-      this.checkModeObjectives();
+      if (!this.netEnabled || this.isNetHost) this.checkModeObjectives();
       return;
     }
+    if (this.netEnabled && !this.isNetHost) return;
     const raidersAlive = this.units.some((u) => u.alive && u.team === TEAMS.RAIDERS);
     const sentAlive = this.units.some((u) => u.alive && u.team === TEAMS.SENTINELS);
     if (!sentAlive) this.endRound(TEAMS.RAIDERS, 'Sentinels eliminated');
