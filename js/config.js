@@ -116,8 +116,8 @@ export const VEHICLES = {
     style: 'wasp',
     starter: true,
     rarity: 'consumer',
-    desc: 'Ultralight VTOL. High rate of fire, soft shells.',
-    bombs: 0,
+    desc: 'Ultralight VTOL. High rate of fire, soft shells. Carries two light bombs.',
+    bombs: 2,
   },
 
   // Fast attack / SMG equivalents

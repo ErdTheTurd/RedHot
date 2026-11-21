@@ -369,10 +369,12 @@ export class NetClient {
 
   publishEvent(event) {
     if (!this.matchId || !this.client?.connected) return;
+    // Combat / objective events need reliability; unit stream stays QoS 0
+    const critical = /^(damage|plant|defuse|bombCarrier|mine|mineBoom|buyExtend|devEnd)$/.test(event?.type || '');
     this.client.publish(
       topic('match', this.matchId, 'event'),
       JSON.stringify({ ...event, from: this.clientId, ts: Date.now() }),
-      { qos: 0 }
+      { qos: critical ? 1 : 0 }
     );
   }
 

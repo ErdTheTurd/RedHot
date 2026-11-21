@@ -14,9 +14,10 @@ export function transformKind(fromDomain, toDomain) {
 }
 
 export function transformDuration(kind) {
-  if (kind === 'hover' || kind === 'drop') return 1.05;
-  if (kind === 'splash' || kind === 'roll') return 1.15;
-  return 0.75;
+  // Slightly longer so fold → reform reads as a real transform on Ultra
+  if (kind === 'hover' || kind === 'drop') return 1.18;
+  if (kind === 'splash' || kind === 'roll' || kind === 'beach') return 1.28;
+  return 0.88;
 }
 
 /**
@@ -77,14 +78,15 @@ export function tickTransform(unit, dt, helpers = {}) {
   // —— Phase A: fold / spin current craft ——
   if (!tr.swapped) {
     const p = smooth(Math.min(1, u / tr.swapAt));
-    const squash = 1 - p * 0.72;
-    const stretch = 1 + p * 0.55;
+    const squash = 1 - p * 0.78;
+    const stretch = 1 + p * 0.7;
     mesh.scale.set(squash, stretch, squash);
-    mesh.rotation.y = tr.startYaw + p * Math.PI * 2.4;
-    mesh.rotation.x = Math.sin(p * Math.PI) * 0.8;
-    mesh.rotation.z = Math.sin(p * Math.PI * 2) * 0.45;
-    // Lift slightly while folding
-    mesh.position.y = tr.startY + Math.sin(p * Math.PI) * 1.8;
+    mesh.rotation.y = tr.startYaw + easeIn(p) * Math.PI * 2.8;
+    mesh.rotation.x = Math.sin(p * Math.PI) * 1.05;
+    mesh.rotation.z = Math.sin(p * Math.PI * 2) * 0.55;
+    // Lift while folding — more air for hover/drop, grounded for beach/roll
+    const lift = (tr.kind === 'hover' || tr.kind === 'drop') ? 2.6 : 1.6;
+    mesh.position.y = tr.startY + Math.sin(p * Math.PI) * lift;
 
     if (u >= tr.swapAt) {
       tr.swapped = true;

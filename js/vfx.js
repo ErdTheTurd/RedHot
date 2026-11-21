@@ -101,27 +101,63 @@ export function createProjectileMesh(heavy = false) {
   return g;
 }
 
-/** Air-dropped freefall bomb */
+/** Air-dropped freefall bomb — readable silhouette with trail glow */
 export function createBombMesh() {
   const g = new THREE.Group();
-  const body = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.14, 0.18, 0.7, 10),
-    new THREE.MeshStandardMaterial({ color: 0x2a3038, metalness: 0.7, roughness: 0.35 })
-  );
+  const steel = new THREE.MeshStandardMaterial({
+    color: 0x2a3038,
+    metalness: 0.82,
+    roughness: 0.28,
+    envMapIntensity: 1.1,
+  });
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.2, 0.85, 14), steel);
   g.add(body);
-  const nose = new THREE.Mesh(
-    new THREE.ConeGeometry(0.18, 0.28, 10),
-    new THREE.MeshStandardMaterial({ color: 0x1a1e24, metalness: 0.6, roughness: 0.4, emissive: 0x401000, emissiveIntensity: 0.3 })
+  const band = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.205, 0.205, 0.08, 14),
+    new THREE.MeshStandardMaterial({
+      color: 0xc8a040,
+      metalness: 0.7,
+      roughness: 0.3,
+      emissive: 0x604000,
+      emissiveIntensity: 0.35,
+    })
   );
-  nose.position.y = -0.45;
+  band.position.y = 0.05;
+  g.add(band);
+  const nose = new THREE.Mesh(
+    new THREE.ConeGeometry(0.2, 0.34, 14),
+    new THREE.MeshStandardMaterial({
+      color: 0x1a1e24,
+      metalness: 0.65,
+      roughness: 0.35,
+      emissive: 0x501000,
+      emissiveIntensity: 0.45,
+    })
+  );
+  nose.position.y = -0.55;
   g.add(nose);
-  const finMat = new THREE.MeshStandardMaterial({ color: 0x4a5560, metalness: 0.5, roughness: 0.45 });
+  const finMat = new THREE.MeshStandardMaterial({ color: 0x4a5560, metalness: 0.55, roughness: 0.4 });
   for (let i = 0; i < 4; i++) {
-    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.22, 0.18), finMat);
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.28, 0.2), finMat);
     const a = (i / 4) * Math.PI * 2;
-    fin.position.set(Math.cos(a) * 0.16, 0.28, Math.sin(a) * 0.16);
+    fin.position.set(Math.cos(a) * 0.17, 0.34, Math.sin(a) * 0.17);
+    fin.rotation.y = a;
     g.add(fin);
   }
+  const trail = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.35, 1.4),
+    new THREE.MeshBasicMaterial({
+      color: 0xff8844,
+      transparent: true,
+      opacity: 0.4,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+    })
+  );
+  trail.position.y = 0.85;
+  g.add(trail);
+  g.userData.trail = trail;
   return g;
 }
 

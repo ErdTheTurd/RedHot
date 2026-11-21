@@ -44,24 +44,33 @@ export function setGraphicsPreset(preset) {
   return next;
 }
 
-/** Full quality profile used by renderer + map builders. */
+/**
+ * Full quality profile used by renderer + map builders.
+ * Ultra is tuned for laptops: rich materials/lighting without CPU water morph
+ * or extreme terrain density that tanks FPS.
+ */
 export function resolveQuality(preset = getGraphicsPreset()) {
   const low = preset === 'low';
   return {
     preset: low ? 'low' : 'high',
     low,
     label: low ? 'Low Poly' : 'Ultra',
-    pixelRatioCap: low ? 1.15 : 2,
+    pixelRatioCap: low ? 1.15 : 1.75,
     shadows: !low,
-    shadowSize: low ? 512 : 2048,
+    shadowSize: low ? 512 : 1536,
     bloom: !low,
+    bloomStrength: low ? 0 : 0.22,
+    bloomRadius: low ? 0 : 0.48,
+    bloomThreshold: low ? 1 : 0.86,
     antialias: !low,
-    waterSeg: low ? 20 : 160,
-    landStep: low ? 5 : 1.55,
-    propDensity: low ? 0.35 : 1.15,
+    // UV-scroll water looks rich; vertex morph was the #1 laptop killer
+    waterSeg: low ? 16 : 64,
+    landStep: low ? 5 : 2.15,
+    propDensity: low ? 0.35 : 1.0,
     flatLand: low,
-    animateWater: !low,
+    animateWater: false,
     detailMeshes: !low,
-    fogBoost: low ? 1.2 : 0.92,
+    fogBoost: low ? 1.2 : 0.95,
+    landmarkDetail: !low,
   };
 }
