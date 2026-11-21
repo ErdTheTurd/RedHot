@@ -23,10 +23,10 @@ const THEMES = {
     waterColor: 0x2a7aa0,
     concrete: 0xc8d0da,
     cliff: 0x4a5344,
-    fog: 0x8eb6c8,
-    fogDensity: 0.008,
-    bg: 0x6a9ab8,
-    hemiSky: 0xd8eef8,
+    fog: 0x7aa8be,
+    fogDensity: 0.0074,
+    bg: 0x5a92b4,
+    hemiSky: 0xc8e8f8,
     hemiGround: 0x3a4a30,
     sun: 0xfff0d0,
     sunIntensity: 1.45,
@@ -39,10 +39,10 @@ const THEMES = {
     waterColor: 0x3a9aaa,
     concrete: 0xc4b49a,
     cliff: 0xa87848,
-    fog: 0xd8c090,
-    fogDensity: 0.007,
-    bg: 0xc8a868,
-    hemiSky: 0xffe6b8,
+    fog: 0xe0c898,
+    fogDensity: 0.0062,
+    bg: 0xd4b070,
+    hemiSky: 0xffe8b0,
     hemiGround: 0x8a6030,
     sun: 0xffe0a0,
     sunIntensity: 1.7,
@@ -55,10 +55,10 @@ const THEMES = {
     waterColor: 0x1a4058,
     concrete: 0xd0d8e0,
     cliff: 0x8a9aaa,
-    fog: 0xc8d8e8,
-    fogDensity: 0.009,
-    bg: 0xa8c0d8,
-    hemiSky: 0xe8f4ff,
+    fog: 0xd0e4f4,
+    fogDensity: 0.0105,
+    bg: 0xb8d0e8,
+    hemiSky: 0xf0f8ff,
     hemiGround: 0x607080,
     sun: 0xf0f6ff,
     sunIntensity: 1.25,
@@ -71,10 +71,10 @@ const THEMES = {
     waterColor: 0x0a2030,
     concrete: 0x3a4450,
     cliff: 0x2a3038,
-    fog: 0x101820,
-    fogDensity: 0.014,
-    bg: 0x0a1018,
-    hemiSky: 0x203048,
+    fog: 0x0c141c,
+    fogDensity: 0.016,
+    bg: 0x060a12,
+    hemiSky: 0x182838,
     hemiGround: 0x101018,
     sun: 0x8899bb,
     sunIntensity: 0.55,
@@ -141,7 +141,16 @@ export function createMap(scene, mapId = 'ironfront', quality = null) {
     blacksite: 'night',
   })[mapId] || 'harbor';
   const theme = THEMES[themeKey];
-  const q = quality || { low: false, waterSeg: 64, landStep: 2.5, propDensity: 1, flatLand: false, animateWater: true, detailMeshes: true };
+  const q = quality || {
+    low: false,
+    waterSeg: 64,
+    landStep: 2.5,
+    propDensity: 1,
+    flatLand: false,
+    animateWater: true,
+    detailMeshes: true,
+    landmarkDetail: true,
+  };
 
   if (mapId === 'dustfall') return buildDustfallMap(scene, theme, q);
   if (mapId === 'frostbite') return buildFrostbiteMap(scene, theme, q);
@@ -562,6 +571,14 @@ function createIronfrontMap(scene, theme, q, mapId = 'ironfront') {
       crate.position.set(x, 1.55, z);
       group.add(crate);
     }
+    // Signature harbor landmarks — tall silhouettes, skipped on Low Poly
+    if (wantLandmarks(q)) {
+      buildHarborCrane(group, -22, -30, metalMat, darkMetal, rustMat);
+      buildHarborCrane(group, 26, -28, metalMat, darkMetal, rustMat, Math.PI * 0.65);
+      buildCargoShip(group, 42, 8, rustMat, darkMetal, metalMat);
+      buildFuelSilos(group, -36, -16, concreteMat, rustMat, metalMat);
+      buildHarborBeacon(group, -48, 18, concreteMat, metalMat, windowMat);
+    }
   }
 
   return {
@@ -899,6 +916,109 @@ function buildContainer(group, x, z, color, nrm) {
   latch.position.set(0.4, 2.0, 2.68);
   root.add(latch);
   group.add(root);
+}
+
+/** Extra signature landmarks — Ultra only; honor detail / density knobs. */
+function wantLandmarks(q) {
+  if (q?.low || q?.landmarkDetail === false || q?.detailMeshes === false) return false;
+  return (q?.propDensity ?? 1) >= 0.55;
+}
+
+function buildHarborCrane(group, x, z, metalMat, darkMetal, rustMat, yaw = 0.35) {
+  const root = new THREE.Group();
+  root.position.set(x, 0, z);
+  root.rotation.y = yaw;
+  const mast = shadow(new THREE.Mesh(new THREE.BoxGeometry(1.1, 16, 1.1), metalMat));
+  mast.position.y = 9;
+  root.add(mast);
+  for (const sx of [-0.7, 0.7]) {
+    const leg = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.35, 8, 0.35), darkMetal));
+    leg.position.set(sx, 5, sx * 0.4);
+    root.add(leg);
+  }
+  const boom = shadow(new THREE.Mesh(new THREE.BoxGeometry(18, 0.55, 0.7), rustMat));
+  boom.position.set(5, 15.5, 0);
+  root.add(boom);
+  const counter = shadow(new THREE.Mesh(new THREE.BoxGeometry(5, 0.7, 0.9), darkMetal));
+  counter.position.set(-4.5, 15.4, 0);
+  root.add(counter);
+  const cabin = shadow(new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.6, 2.0), metalMat));
+  cabin.position.set(0.5, 14.2, 0);
+  root.add(cabin);
+  const hook = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.35, 1.4, 0.35), darkMetal));
+  hook.position.set(12, 12.5, 0);
+  root.add(hook);
+  const cable = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 3.2, 5), darkMetal));
+  cable.position.set(12, 14, 0);
+  root.add(cable);
+  group.add(root);
+}
+
+function buildCargoShip(group, x, z, rustMat, darkMetal, metalMat) {
+  const hull = shadow(new THREE.Mesh(new THREE.BoxGeometry(22, 3.2, 6.5), rustMat));
+  hull.position.set(x, 0.4, z);
+  group.add(hull);
+  const bow = shadow(new THREE.Mesh(new THREE.BoxGeometry(5, 2.4, 5.2), rustMat));
+  bow.position.set(x + 12, 0.6, z);
+  bow.rotation.y = 0.15;
+  group.add(bow);
+  const bridge = shadow(new THREE.Mesh(new THREE.BoxGeometry(4.5, 4.2, 5.5), metalMat));
+  bridge.position.set(x - 7, 4.2, z);
+  group.add(bridge);
+  const stack = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.85, 3.5, 8), darkMetal));
+  stack.position.set(x - 5, 7.5, z);
+  group.add(stack);
+  for (let i = 0; i < 4; i++) {
+    const crate = shadow(new THREE.Mesh(
+      new THREE.BoxGeometry(2.6, 2.2, 2.4),
+      std({ color: [0xc44b2a, 0x2a6a9a, 0xc9a227, 0x3a7a4a][i], metalness: 0.55, roughness: 0.45 })
+    ));
+    crate.position.set(x - 1 + i * 3.1, 3.4, z);
+    group.add(crate);
+  }
+}
+
+function buildFuelSilos(group, x, z, concreteMat, rustMat, metalMat) {
+  for (let i = 0; i < 3; i++) {
+    const tank = shadow(new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 7.5, 12), rustMat));
+    tank.position.set(x + i * 5.2, 4.6, z);
+    group.add(tank);
+    const rim = shadow(new THREE.Mesh(new THREE.TorusGeometry(2.25, 0.12, 6, 16), metalMat));
+    rim.rotation.x = Math.PI / 2;
+    rim.position.set(x + i * 5.2, 8.2, z);
+    group.add(rim);
+  }
+  const pipe = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 12, 6), metalMat));
+  pipe.rotation.z = Math.PI / 2;
+  pipe.position.set(x + 5.2, 2.2, z + 2.4);
+  group.add(pipe);
+  const pad = shadow(new THREE.Mesh(new THREE.BoxGeometry(16, 0.25, 7), concreteMat));
+  pad.position.set(x + 5.2, 1.15, z);
+  group.add(pad);
+}
+
+function buildHarborBeacon(group, x, z, concreteMat, metalMat, windowMat) {
+  const base = shadow(new THREE.Mesh(new THREE.CylinderGeometry(2.4, 3.0, 3.5, 10), concreteMat));
+  base.position.set(x, 2.2, z);
+  group.add(base);
+  const shaft = shadow(new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.4, 10, 10), concreteMat));
+  shaft.position.set(x, 8.5, z);
+  group.add(shaft);
+  const lantern = shadow(new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 2.2, 10), metalMat));
+  lantern.position.set(x, 14.2, z);
+  group.add(lantern);
+  const glass = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.45, 1.45, 1.6, 10),
+    windowMat
+  );
+  glass.position.set(x, 14.2, z);
+  group.add(glass);
+  const lamp = new THREE.PointLight(0xffe0a0, 1.8, 40, 2);
+  lamp.position.set(x, 14.4, z);
+  group.add(lamp);
+  const cap = shadow(new THREE.Mesh(new THREE.ConeGeometry(2.0, 1.4, 8), metalMat));
+  cap.position.set(x, 15.8, z);
+  group.add(cap);
 }
 
 function buildRadarTower(group, x, z, metalMat, darkMetal) {

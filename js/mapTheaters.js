@@ -205,6 +205,202 @@ function nearestWaterHelper(isWaterFn, x, z, fallback) {
   return best || fallback?.[0] || { x: 0, z: 0 };
 }
 
+/** Extra signature landmarks — Ultra only; honor detail / density knobs. */
+function wantLandmarks(q) {
+  if (q?.low || q?.landmarkDetail === false || q?.detailMeshes === false) return false;
+  return (q?.propDensity ?? 1) >= 0.55;
+}
+
+function buildMesaArch(group, x, z, cliffMat, sandMat) {
+  const left = shadow(new THREE.Mesh(new THREE.BoxGeometry(3.2, 9, 4.5), cliffMat));
+  left.position.set(x - 4.5, 5.2, z);
+  group.add(left);
+  const right = shadow(new THREE.Mesh(new THREE.BoxGeometry(3.2, 9, 4.5), cliffMat));
+  right.position.set(x + 4.5, 5.2, z);
+  group.add(right);
+  const lintel = shadow(new THREE.Mesh(new THREE.BoxGeometry(13, 2.4, 4.2), cliffMat));
+  lintel.position.set(x, 10.8, z);
+  group.add(lintel);
+  const cap = shadow(new THREE.Mesh(new THREE.BoxGeometry(12.5, 0.45, 3.8), sandMat));
+  cap.position.set(x, 12.1, z);
+  group.add(cap);
+}
+
+function buildDesertRadioTower(group, x, z, metalMat, darkMetal) {
+  const mast = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.4, 18, 8), metalMat));
+  mast.position.set(x, 10, z);
+  group.add(mast);
+  for (let i = 0; i < 3; i++) {
+    const y = 4 + i * 4.5;
+    const ring = shadow(new THREE.Mesh(new THREE.BoxGeometry(3.2 - i * 0.4, 0.12, 3.2 - i * 0.4), darkMetal));
+    ring.position.set(x, y, z);
+    group.add(ring);
+    for (let a = 0; a < 4; a++) {
+      const ang = (a / 4) * Math.PI * 2 + 0.4;
+      const strut = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.08, 4.2, 0.08), darkMetal));
+      strut.position.set(x + Math.cos(ang) * 1.2, y - 1.8, z + Math.sin(ang) * 1.2);
+      strut.rotation.z = Math.cos(ang) * 0.25;
+      strut.rotation.x = Math.sin(ang) * 0.25;
+      group.add(strut);
+    }
+  }
+  const dish = shadow(new THREE.Mesh(new THREE.SphereGeometry(1.8, 12, 10, 0, Math.PI * 2, 0, Math.PI * 0.48), metalMat));
+  dish.position.set(x, 17.5, z);
+  dish.rotation.x = 0.55;
+  group.add(dish);
+  const beacon = new THREE.Mesh(
+    new THREE.SphereGeometry(0.22, 8, 8),
+    new THREE.MeshBasicMaterial({ color: 0xff4422 })
+  );
+  beacon.position.set(x, 19.2, z);
+  group.add(beacon);
+}
+
+function buildOilDerrick(group, x, z, metalMat, darkMetal) {
+  const legs = [[-2.2, -2.2], [2.2, -2.2], [-2.2, 2.2], [2.2, 2.2]];
+  for (const [lx, lz] of legs) {
+    const leg = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.28, 12, 0.28), metalMat));
+    leg.position.set(x + lx, 7, z + lz);
+    leg.rotation.z = -lx * 0.06;
+    leg.rotation.x = lz * 0.06;
+    group.add(leg);
+  }
+  const crown = shadow(new THREE.Mesh(new THREE.BoxGeometry(3.5, 0.4, 3.5), darkMetal));
+  crown.position.set(x, 13.2, z);
+  group.add(crown);
+  const boom = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.35, 8, 0.35), metalMat));
+  boom.position.set(x, 9, z);
+  group.add(boom);
+  const pump = shadow(new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.2, 1.4), darkMetal));
+  pump.position.set(x, 1.8, z);
+  group.add(pump);
+}
+
+function buildIceLighthouse(group, x, z, concreteMat, metalMat, windowMat) {
+  const base = shadow(new THREE.Mesh(new THREE.CylinderGeometry(2.6, 3.2, 2.8, 10), concreteMat));
+  base.position.set(x, 2.0, z);
+  group.add(base);
+  const shaft = shadow(new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.5, 11, 10), concreteMat));
+  shaft.position.set(x, 8.5, z);
+  group.add(shaft);
+  // Icy stripe bands
+  for (const y of [5.5, 9.5]) {
+    const band = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.35, 1.35, 0.55, 10),
+      std({ color: 0xe8f4ff, roughness: 0.35, metalness: 0.2, emissive: 0xa0c8e8, emissiveIntensity: 0.15 })
+    );
+    band.position.set(x, y, z);
+    group.add(band);
+  }
+  const lantern = shadow(new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.7, 2.0, 10), metalMat));
+  lantern.position.set(x, 14.8, z);
+  group.add(lantern);
+  const glass = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 1.5, 10), windowMat);
+  glass.position.set(x, 14.8, z);
+  group.add(glass);
+  const light = new THREE.PointLight(0xc8e8ff, 2.2, 48, 2);
+  light.position.set(x, 15, z);
+  group.add(light);
+  const cap = shadow(new THREE.Mesh(new THREE.ConeGeometry(2.1, 1.5, 8), metalMat));
+  cap.position.set(x, 16.4, z);
+  group.add(cap);
+}
+
+function buildIceRidgeWall(group, x, z, cliffMat, sandMat, yaw = 0.2) {
+  const wall = shadow(new THREE.Mesh(new THREE.BoxGeometry(8, 11, 28), cliffMat));
+  wall.position.set(x, 5.5, z);
+  wall.rotation.y = yaw;
+  group.add(wall);
+  for (const [ox, oy, oz, s] of [[-2, 7, -8, 3.2], [1.5, 8, 4, 2.6], [0, 9, 10, 2.2]]) {
+    const spike = shadow(new THREE.Mesh(new THREE.ConeGeometry(s * 0.55, s * 1.8, 5), sandMat));
+    spike.position.set(x + ox, oy + s * 0.4, z + oz);
+    spike.rotation.y = yaw;
+    group.add(spike);
+  }
+}
+
+function buildFrostBeacon(group, x, z, metalMat, darkMetal) {
+  const mast = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.28, 14, 8), metalMat));
+  mast.position.set(x, 8, z);
+  group.add(mast);
+  const cabin = shadow(new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.0, 2.4), darkMetal));
+  cabin.position.set(x, 3.2, z);
+  group.add(cabin);
+  const dish = shadow(new THREE.Mesh(new THREE.SphereGeometry(1.4, 12, 10, 0, Math.PI * 2, 0, Math.PI * 0.45), metalMat));
+  dish.position.set(x, 14.2, z);
+  dish.rotation.x = 0.7;
+  group.add(dish);
+  const lamp = new THREE.Mesh(
+    new THREE.SphereGeometry(0.28, 8, 8),
+    new THREE.MeshBasicMaterial({ color: 0xa0e0ff })
+  );
+  lamp.position.set(x, 15.6, z);
+  group.add(lamp);
+}
+
+function buildNeonTower(group, x, z, metalMat, darkMetal, hue = 0xff3b7a) {
+  const shaft = shadow(new THREE.Mesh(new THREE.BoxGeometry(2.4, 22, 2.4), darkMetal));
+  shaft.position.set(x, 12, z);
+  group.add(shaft);
+  for (let i = 0; i < 5; i++) {
+    const ring = new THREE.Mesh(
+      new THREE.BoxGeometry(3.4, 0.18, 3.4),
+      new THREE.MeshStandardMaterial({ color: hue, emissive: hue, emissiveIntensity: 2.6 })
+    );
+    ring.position.set(x, 4 + i * 3.6, z);
+    group.add(ring);
+  }
+  const tip = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.15, 0.35, 4, 6),
+    new THREE.MeshStandardMaterial({ color: hue, emissive: hue, emissiveIntensity: 3 })
+  );
+  tip.position.set(x, 25, z);
+  group.add(tip);
+  const glow = new THREE.PointLight(hue, 2.4, 36, 2);
+  glow.position.set(x, 18, z);
+  group.add(glow);
+  const strut = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.2, 16, 0.2), metalMat));
+  strut.position.set(x + 1.6, 10, z + 1.6);
+  group.add(strut);
+}
+
+function buildAntennaFarm(group, x, z, metalMat, darkMetal) {
+  for (let i = 0; i < 4; i++) {
+    const ox = (i % 2) * 3.5 - 1.5;
+    const oz = Math.floor(i / 2) * 3.5 - 1.5;
+    const h = 10 + i * 1.5;
+    const pole = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.16, h, 6), metalMat));
+    pole.position.set(x + ox, h * 0.5 + 1, z + oz);
+    group.add(pole);
+    const dish = shadow(new THREE.Mesh(new THREE.SphereGeometry(0.9, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.5), darkMetal));
+    dish.position.set(x + ox, h + 0.6, z + oz);
+    dish.rotation.x = 0.5 + i * 0.1;
+    group.add(dish);
+  }
+  const pad = shadow(new THREE.Mesh(new THREE.BoxGeometry(8, 0.2, 8), darkMetal));
+  pad.position.set(x, 1.15, z);
+  group.add(pad);
+}
+
+function buildIndustrialStack(group, x, z, concreteMat, metalMat, hue = 0x3bffc8) {
+  const stack = shadow(new THREE.Mesh(new THREE.CylinderGeometry(1.6, 2.2, 16, 12), concreteMat));
+  stack.position.set(x, 9, z);
+  group.add(stack);
+  const collar = new THREE.Mesh(
+    new THREE.TorusGeometry(2.0, 0.18, 6, 16),
+    new THREE.MeshStandardMaterial({ color: hue, emissive: hue, emissiveIntensity: 2.4 })
+  );
+  collar.rotation.x = Math.PI / 2;
+  collar.position.set(x, 15.5, z);
+  group.add(collar);
+  const cap = shadow(new THREE.Mesh(new THREE.CylinderGeometry(1.8, 1.8, 0.5, 12), metalMat));
+  cap.position.set(x, 17.2, z);
+  group.add(cap);
+  const glow = new THREE.PointLight(hue, 1.6, 28, 2);
+  glow.position.set(x, 16, z);
+  group.add(glow);
+}
+
 /* ═══════════════════════════════════════════════════════════
  * DUSTFALL MESA — north–south wadi canyon, mesa bowls, dunes
  * ═══════════════════════════════════════════════════════════ */
@@ -370,6 +566,17 @@ export function buildDustfallMap(scene, theme, q) {
     const spire = shadow(new THREE.Mesh(new THREE.ConeGeometry(1.1, h, 5), cliffMat));
     spire.position.set(x, h * 0.5, z);
     group.add(spire);
+  }
+
+  // Signature Dustfall landmarks — arch / radio / derrick (Ultra)
+  if (wantLandmarks(q)) {
+    buildMesaArch(group, 4, -30, cliffMat, sandMat);
+    buildDesertRadioTower(group, 32, 18, metalMat, darkMetal);
+    buildOilDerrick(group, -38, -18, metalMat, darkMetal);
+    // Distant butte needle for skyline read
+    const needle = shadow(new THREE.Mesh(new THREE.ConeGeometry(1.6, 12, 6), cliffMat));
+    needle.position.set(-42, 7, 28);
+    group.add(needle);
   }
 
   const sites = {
@@ -578,6 +785,23 @@ export function buildFrostbiteMap(scene, theme, q) {
       ridge.rotation.y = ry;
       group.add(ridge);
     }
+  }
+
+  // Signature Frostbite landmarks — lighthouse / ice ridge / beacon (Ultra)
+  if (wantLandmarks(q)) {
+    buildIceLighthouse(group, -38, 28, concreteMat, metalMat, windowMat);
+    buildIceRidgeWall(group, 44, 10, cliffMat, sandMat, -0.25);
+    buildFrostBeacon(group, 30, -22, metalMat, darkMetal);
+    // Ice arch remnant between shelves
+    const archL = shadow(new THREE.Mesh(new THREE.BoxGeometry(2.2, 7, 3), sandMat));
+    archL.position.set(-2, 4.2, 10);
+    group.add(archL);
+    const archR = shadow(new THREE.Mesh(new THREE.BoxGeometry(2.2, 7, 3), sandMat));
+    archR.position.set(6, 4.2, 10);
+    group.add(archR);
+    const archTop = shadow(new THREE.Mesh(new THREE.BoxGeometry(10, 2, 3.2), sandMat));
+    archTop.position.set(2, 8.2, 10);
+    group.add(archTop);
   }
 
   const sites = {
@@ -814,6 +1038,14 @@ export function buildBlacksiteMap(scene, theme, q) {
     const light = new THREE.PointLight(0xffe0b0, 2.2, 32, 2);
     light.position.set(x, 9.5, z);
     group.add(light);
+  }
+
+  // Signature Blacksite landmarks — neon tower / antennas / stack (Ultra)
+  if (wantLandmarks(q)) {
+    buildNeonTower(group, 0, -24, metalMat, darkMetal, 0xff3b7a);
+    buildAntennaFarm(group, -28, -20, metalMat, darkMetal);
+    buildIndustrialStack(group, 28, 20, concreteMat, metalMat, 0x3bffc8);
+    buildNeonTower(group, -18, 18, metalMat, darkMetal, 0x5aa0ff);
   }
 
   const sites = {
