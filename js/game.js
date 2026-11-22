@@ -325,6 +325,10 @@ export class Game {
   }
 
   _tearDownNet() {
+    if (Array.isArray(this._matchOverRetries)) {
+      for (const t of this._matchOverRetries) clearTimeout(t);
+    }
+    this._matchOverRetries = [];
     if (Array.isArray(this._unsubNet)) {
       for (const off of this._unsubNet) off?.();
     }
@@ -638,6 +642,18 @@ export class Game {
         ? data.playerWon
         : (data.winnerTeam ? data.winnerTeam === this.player?.team : false);
       this.finishMatch(!!won, data.reason || 'Match complete');
+      return;
+    }
+    // Score-based fallback if the one-shot matchOver meta was dropped (QoS 0)
+    if (!this._finishing && data.score && !this.mode?.fragLimit && this.mode?.bots !== 'waves') {
+      const need = this.mode?.roundsToWin || ROUNDS_TO_WIN;
+      if (data.score.raiders >= need || data.score.sentinels >= need) {
+        const playerWon =
+          (data.score.raiders > data.score.sentinels && this.player?.team === TEAMS.RAIDERS) ||
+          (data.score.sentinels > data.score.raiders && this.player?.team === TEAMS.SENTINELS);
+        this.finishMatch(!!playerWon, 'Match complete');
+        return;
+      }
     }
     if (data.frags) this.frags = { ...data.frags };
     if (data.buyVotes) this.buyVotes = { ...data.buyVotes };
@@ -802,7 +818,12 @@ export class Game {
       const ai = this.units.find((u) => u.id === data.targetAiId && !u.isPlayer && !u.isRemote);
       if (!ai?.alive) return;
       const attacker = this.units.find((u) => u.netId === data.from) || ai;
-      const result = ai.takeDamage(data.amount || 0, attacker, data.pen ?? 1);
+      // Clamp peer-reported damage so a modified client cannot one-shot AI
+      const maxHit = 320; // covers heaviest legitimate bomb / torpedo blast
+      const amount = Math.max(0, Math.min(maxHit, Number(data.amount) || 0));
+      const pen = Math.max(0, Math.min(1.2, Number(data.pen) || 1));
+      if (amount <= 0) return;
+      const result = ai.takeDamage(amount, attacker, pen);
       if (result.killed) {
         if (attacker && attacker !== ai) {
           attacker.kills += 1;
@@ -1169,24 +1190,31 @@ export class Game {
       clearTimeout(this._roundTimer);
       this._roundTimer = null;
     }
-    // Tell peers immediately so they are not left sitting in a dead LIVE phase
+    // Tell peers immediately so they are not left sitting in a dead LIVE phase.
+    // Meta is QoS 0 — republish a few times so a dropped packet does not strand clients.
     if (this.netEnabled && this.isNetHost) {
-      try {
-        this.net?.publishMatchMeta?.({
-          phase: PHASE.END,
-          phaseLabel: 'END',
-          timer: 0,
-          score: this.score,
-          frags: this.frags,
-          matchOver: true,
-          playerWon: !!playerWon,
-          winnerTeam: playerWon ? this.player?.team : (
-            this.player?.team === TEAMS.RAIDERS ? TEAMS.SENTINELS : TEAMS.RAIDERS
-          ),
-          reason: reason || '',
-          roundNumber: this.roundNumber,
-        });
-      } catch { /* ignore */ }
+      const overMeta = {
+        phase: PHASE.END,
+        phaseLabel: 'END',
+        timer: 0,
+        score: this.score,
+        frags: this.frags,
+        matchOver: true,
+        playerWon: !!playerWon,
+        winnerTeam: playerWon ? this.player?.team : (
+          this.player?.team === TEAMS.RAIDERS ? TEAMS.SENTINELS : TEAMS.RAIDERS
+        ),
+        reason: reason || '',
+        roundNumber: this.roundNumber,
+      };
+      const pushOver = () => {
+        try { this.net?.publishMatchMeta?.(overMeta); } catch { /* ignore */ }
+      };
+      pushOver();
+      if (this._matchOverRetries) {
+        for (const t of this._matchOverRetries) clearTimeout(t);
+      }
+      this._matchOverRetries = [400, 1200, 2400].map((ms) => setTimeout(pushOver, ms));
     }
     const deposit = 400 + this.player.kills * 80 + (playerWon ? 900 : 250) + Math.floor(this.player.money * 0.15);
     const xp = 120 + this.player.kills * 35 + (playerWon ? 200 : 60);
