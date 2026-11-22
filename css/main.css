@@ -825,6 +825,34 @@ html, body {
 .mm-slots li.filled .mm-kind.human { color: var(--ok); }
 .mm-slots li.filled .mm-kind.you { color: var(--signal); }
 
+.mm-bomb-fuse {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  align-items: center;
+  margin: 0.85rem auto 0.35rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mist);
+}
+
+.mm-bomb-fuse em {
+  font-style: normal;
+  opacity: 0.7;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.mm-bomb-fuse select {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--line);
+  color: var(--foam);
+  font: 500 0.95rem var(--font-body);
+  padding: 0.55rem 0.85rem;
+  min-width: 11rem;
+}
+
 .mm-actions {
   display: flex;
   flex-wrap: wrap;
