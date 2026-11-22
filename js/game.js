@@ -83,6 +83,7 @@ export class Game {
       carrier: null,
       mesh: null,
     };
+    this.bombFuse = BOMB_TIME; // host-selected warhead fuse (seconds)
     this.running = false;
     this.buyOpen = false;
     this._beepAcc = 0;
@@ -479,12 +480,16 @@ export class Game {
     const wasAlive = u.alive !== false;
     if (typeof s.yaw === 'number') u.yaw = s.yaw;
     if (typeof s.pitch === 'number') u.pitch = s.pitch;
-    if (typeof s.hp === 'number') u.hp = s.hp;
+    if (typeof s.hp === 'number' && !u.dying) u.hp = s.hp;
     if (typeof s.armor === 'number') u.armor = s.armor;
     if (typeof s.money === 'number') u.money = s.money;
     if (typeof s.kills === 'number') u.kills = s.kills;
     if (typeof s.deaths === 'number') u.deaths = s.deaths;
-    if (typeof s.alive === 'boolean') u.alive = s.alive;
+    // Never resurrect a dying wreck from a stale snapshot
+    if (typeof s.alive === 'boolean') {
+      if (u.dying && s.alive) { /* keep dead until fall ends / respawn */ }
+      else u.alive = s.alive;
+    }
     if (typeof s.hasBomb === 'boolean' && u.isRemote) u.hasBomb = s.hasBomb;
     if (typeof s.flightAlt === 'number') u.flightAlt = s.flightAlt;
     if (wasAlive && s.alive === false && u.isRemote && !u.dying) {
@@ -539,9 +544,18 @@ export class Game {
   _onNetUnit(data) {
     if (!this.running || !data) return;
     if (data.aiBundle && Array.isArray(data.units)) {
+      // Host must never re-apply its own AI echo — that resurrected dead bots
+      if (this.isNetHost) return;
       for (const s of data.units) {
         const u = this.units.find((x) => x.id === s.id && !x.isPlayer && !x.isRemote);
-        if (u) this._applyUnitState(u, s, 0.45);
+        if (!u) continue;
+        // Don't fight an in-progress death fall
+        if (u.dying && s.alive === false) {
+          this._applyUnitState(u, { ...s, alive: false }, 0.45);
+          continue;
+        }
+        if (u.dying) continue;
+        this._applyUnitState(u, s, 0.45);
       }
       return;
     }
@@ -617,19 +631,13 @@ export class Game {
       this.phase = data.phase;
       this.phaseLabel = data.phaseLabel || data.phase.toUpperCase();
     }
-    if (data.score) {
-      this.score = { ...data.score };
-      const need = this.mode?.roundsToWin || ROUNDS_TO_WIN;
-      if (
-        !this._finishing
-        && data.phase === PHASE.END
-        && (this.score.raiders >= need || this.score.sentinels >= need)
-      ) {
-        const playerWon =
-          (this.score.raiders > this.score.sentinels && this.player?.team === TEAMS.RAIDERS)
-          || (this.score.sentinels > this.score.raiders && this.player?.team === TEAMS.SENTINELS);
-        this.finishMatch(!!playerWon, 'Match complete');
-      }
+    if (data.score) this.score = { ...data.score };
+    // Host finished the match — clients must always get congrats + return to menu
+    if (!this._finishing && data.matchOver) {
+      const won = typeof data.playerWon === 'boolean'
+        ? data.playerWon
+        : (data.winnerTeam ? data.winnerTeam === this.player?.team : false);
+      this.finishMatch(!!won, data.reason || 'Match complete');
     }
     if (data.frags) this.frags = { ...data.frags };
     if (data.buyVotes) this.buyVotes = { ...data.buyVotes };
@@ -695,19 +703,26 @@ export class Game {
       return;
     }
 
+    if (data.type === 'bombFuse' && typeof data.seconds === 'number') {
+      this.bombFuse = Math.max(15, Math.min(120, data.seconds));
+      this.ui?.toast?.(`Warhead fuse set to ${this.bombFuse}s`, 1800);
+      return;
+    }
+
     if (data.type === 'plant' && data.site) {
       const planter = this.units.find((u) => u.netId === data.from);
       if (planter) planter.hasBomb = false;
       if (!this.bomb.planted) {
         this.bomb.planted = true;
         this.bomb.site = data.site;
-        this.bomb.timer = data.timer ?? BOMB_TIME;
+        this.bomb.timer = data.timer ?? this.bombFuse ?? BOMB_TIME;
+        this.bombFuse = this.bomb.timer;
         this.phase = PHASE.BOMB;
         this.phaseLabel = 'WARHEAD';
         this.timer = this.bomb.timer;
         this._ensureBombMesh(data.site, data.x != null ? { x: data.x, y: data.y, z: data.z } : null);
         SFX.plant();
-        this.ui?.toast?.(`WARHEAD PLANTED · ${data.site}`);
+        this.ui?.toast?.(`WARHEAD PLANTED · ${data.site} · ${this.bomb.timer}s`);
         this.ui?.showBanner?.('WARHEAD PLANTED', `Site ${data.site}`);
       }
       return;
@@ -776,6 +791,28 @@ export class Game {
         this.beginDeathFall(this.player);
         this.ui?.killFeed?.(attacker, this.player, data.weapon || 'HIT');
         this._transferBombFrom(this.player);
+        this.checkElimination();
+        this.checkModeObjectives();
+      }
+      return;
+    }
+
+    // Client hits on AI — host applies damage so bots stay dead
+    if (data.type === 'damage' && data.targetAiId && this.isNetHost) {
+      const ai = this.units.find((u) => u.id === data.targetAiId && !u.isPlayer && !u.isRemote);
+      if (!ai?.alive) return;
+      const attacker = this.units.find((u) => u.netId === data.from) || ai;
+      const result = ai.takeDamage(data.amount || 0, attacker, data.pen ?? 1);
+      if (result.killed) {
+        if (attacker && attacker !== ai) {
+          attacker.kills += 1;
+          this.frags[attacker.team] = (this.frags[attacker.team] || 0) + 1;
+          attacker.money = Math.min(MAX_MONEY, attacker.money + KILL_REWARD);
+        }
+        SFX.kill();
+        this.beginDeathFall(ai);
+        this.ui?.killFeed?.(attacker, ai, data.weapon || 'HIT');
+        this._transferBombFrom(ai);
         this.checkElimination();
         this.checkModeObjectives();
       }
@@ -1003,30 +1040,44 @@ export class Game {
     this.bomb.planted = false;
     this.bomb.site = null;
     this.bomb.position = null;
-    this.bomb.timer = BOMB_TIME;
+    this.bomb.timer = this.bombFuse || BOMB_TIME;
     if (this.bomb.mesh) {
       this.scene.remove(this.bomb.mesh);
       this.bomb.mesh = null;
     }
   }
 
+  setBombFuse(seconds) {
+    const n = Math.max(15, Math.min(120, Math.round(Number(seconds) || BOMB_TIME)));
+    this.bombFuse = n;
+    if (this.netEnabled && this.isNetHost) {
+      this.net?.publishEvent?.({
+        type: 'bombFuse',
+        eventId: this._netEventId(`fuse-${n}`),
+        seconds: n,
+      });
+    }
+    return n;
+  }
+
   plantBomb(unit, site) {
     if (this.bomb.planted || !unit.hasBomb) return;
     unit.hasBomb = false;
     unit.plantProgress = 0;
+    const fuse = this.bombFuse || BOMB_TIME;
     this.bomb.planted = true;
     this.bomb.site = site;
     this.bomb.position = this.map.sites[site].clone();
-    this.bomb.timer = BOMB_TIME;
+    this.bomb.timer = fuse;
     this.phase = PHASE.BOMB;
     this.phaseLabel = 'WARHEAD';
-    this.timer = BOMB_TIME;
+    this.timer = fuse;
     this._ensureBombMesh(site, this.bomb.position);
 
     unit.money = Math.min(MAX_MONEY, unit.money + PLANT_REWARD);
     SFX.plant();
-    this.ui.toast(`WARHEAD PLANTED · ${site}`);
-    this.ui.showBanner('WARHEAD PLANTED', `Site ${site}`);
+    this.ui.toast(`WARHEAD PLANTED · ${site} · ${fuse}s`);
+    this.ui.showBanner('WARHEAD PLANTED', `Site ${site} · ${fuse}s fuse`);
     if (unit.isPlayer) {
       this._toastAchievements(this.inventory?.notePlant?.());
     }
@@ -1035,7 +1086,7 @@ export class Game {
         type: 'plant',
         eventId: this._netEventId(`plant-${site}`),
         site,
-        timer: BOMB_TIME,
+        timer: fuse,
         x: this.bomb.position.x,
         y: this.bomb.position.y,
         z: this.bomb.position.z,
@@ -1114,6 +1165,29 @@ export class Game {
     this._finishing = true;
     this.phase = PHASE.END;
     this.phaseLabel = 'END';
+    if (this._roundTimer) {
+      clearTimeout(this._roundTimer);
+      this._roundTimer = null;
+    }
+    // Tell peers immediately so they are not left sitting in a dead LIVE phase
+    if (this.netEnabled && this.isNetHost) {
+      try {
+        this.net?.publishMatchMeta?.({
+          phase: PHASE.END,
+          phaseLabel: 'END',
+          timer: 0,
+          score: this.score,
+          frags: this.frags,
+          matchOver: true,
+          playerWon: !!playerWon,
+          winnerTeam: playerWon ? this.player?.team : (
+            this.player?.team === TEAMS.RAIDERS ? TEAMS.SENTINELS : TEAMS.RAIDERS
+          ),
+          reason: reason || '',
+          roundNumber: this.roundNumber,
+        });
+      } catch { /* ignore */ }
+    }
     const deposit = 400 + this.player.kills * 80 + (playerWon ? 900 : 250) + Math.floor(this.player.money * 0.15);
     const xp = 120 + this.player.kills * 35 + (playerWon ? 200 : 60);
     const humans = (this.netHumans || []).filter((h) => h.clientId).length;
@@ -1138,7 +1212,7 @@ export class Game {
         this._finishing = false;
         this._tearDownNet();
         this.ui.hideAllScreens();
-        document.getElementById('hud').classList.add('hidden');
+        document.getElementById('hud')?.classList.add('hidden');
         this.input.exitLock();
         this.ui.refreshMeta?.();
         this.ui.showScreen('menu');
@@ -1197,6 +1271,24 @@ export class Game {
           type: 'damage',
           eventId: this._netEventId('ord-dmg'),
           targetNetId: u.netId,
+          amount: dmg,
+          pen: p.pen,
+          weapon: p.kind === 'torpedo' ? 'TORPEDO' : 'BOMB',
+        });
+        if (p.owner?.isPlayer) SFX.hit();
+        continue;
+      }
+      if (
+        this.netEnabled
+        && !this.isNetHost
+        && !u.isPlayer
+        && !u.isRemote
+        && p.owner?.isPlayer
+      ) {
+        this.net.publishEvent({
+          type: 'damage',
+          eventId: this._netEventId('ai-ord'),
+          targetAiId: u.id,
           amount: dmg,
           pen: p.pen,
           weapon: p.kind === 'torpedo' ? 'TORPEDO' : 'BOMB',
@@ -1634,9 +1726,9 @@ export class Game {
       speed: 28,
       vy: -2,
       life: 6,
-      damage: 95 + (unit.vehicle.bombs || 1) * 4,
-      pen: 1,
-      radius: 9 + (unit.matchMods?.bombRadius || 0),
+      damage: 160 + (unit.vehicle.bombs || 1) * 12,
+      pen: 1.15,
+      radius: 14 + (unit.matchMods?.bombRadius || 0),
       owner: unit,
       heavy: true,
       mesh,
@@ -1679,9 +1771,9 @@ export class Game {
       dir,
       speed: 42,
       life: unit.vehicle.range / 42 + 0.5,
-      damage: 80 + (unit.vehicle.torpedoes || 1) * 5,
-      pen: 0.95,
-      radius: 4 + (unit.matchMods?.torpedoRadius || 0),
+      damage: 120 + (unit.vehicle.torpedoes || 1) * 8,
+      pen: 1.05,
+      radius: 6.5 + (unit.matchMods?.torpedoRadius || 0),
       owner: unit,
       heavy: true,
       mesh,
@@ -2457,9 +2549,15 @@ export class Game {
         this.spawnExplosion(u.mesh.position.clone());
         u.clearDeathFire();
         u.dying = false;
+        u.alive = false; // stay dead until an intentional respawn
+        u.hp = 0;
         u.mesh.visible = false;
         u.vy = 0;
         u.vel.set(0, 0, 0);
+        if (this.isNetHost || !this.netEnabled) {
+          this.checkElimination();
+          this.checkModeObjectives();
+        }
       }
     }
   }
@@ -2536,6 +2634,27 @@ export class Game {
               hit = true;
               break;
             }
+            // Non-host cannot kill host AI locally — send damage to host
+            if (
+              this.netEnabled
+              && !this.isNetHost
+              && !u.isPlayer
+              && !u.isRemote
+              && p.owner?.isPlayer
+            ) {
+              this.net.publishEvent({
+                type: 'damage',
+                eventId: this._netEventId('ai-dmg'),
+                targetAiId: u.id,
+                amount: p.damage,
+                pen: p.pen,
+                weapon: 'GUN',
+              });
+              if (p.owner.isPlayer) SFX.hit();
+              this.effects.push(spawnImpact(this.scene, p.pos.clone(), p.heavy));
+              hit = true;
+              break;
+            }
             const result = u.takeDamage(p.damage, p.owner, p.pen);
             if (result.lastStand && u.isPlayer) this.ui.toast('Reactive shield saved you!', 1800);
             if (p.owner.isPlayer && result.dmg > 0) SFX.hit();
@@ -2586,19 +2705,38 @@ export class Game {
       this.queueRespawnDead(2.8);
       return;
     }
-    // Non-host: still allow frag/siege soft respawn logic locally, but round end is host-only
+    if (this.netEnabled && !this.isNetHost) return;
+
+    const living = (team) => this.units.some((u) => u.alive && !u.dying && u.team === team);
+    const raidersAlive = living(TEAMS.RAIDERS);
+    const sentAlive = living(TEAMS.SENTINELS);
+
+    // Frag / siege: wipe still ends the match so the player is not left stuck
     if (this.mode?.fragLimit) {
-      if (!this.netEnabled || this.isNetHost) this.checkModeObjectives();
+      this.checkModeObjectives();
+      if (!sentAlive && raidersAlive) {
+        this.finishMatch(this.player?.team === TEAMS.RAIDERS, 'Enemy fleet eliminated');
+        return;
+      }
+      if (!raidersAlive && sentAlive) {
+        this.finishMatch(this.player?.team === TEAMS.SENTINELS, 'Enemy fleet eliminated');
+        return;
+      }
       this.queueRespawnDead(2.5);
       return;
     }
     if (this.mode?.bots === 'waves') {
-      if (!this.netEnabled || this.isNetHost) this.checkModeObjectives();
+      this.checkModeObjectives();
+      if (this.phase === PHASE.END) return;
+      const enemiesLeft = this.units.some(
+        (u) => u.alive && !u.dying && !u.isPlayer && u.team !== this.player?.team
+      );
+      if (!enemiesLeft && (this.waveKills || 0) > 0) {
+        this.finishMatch(true, 'Siege cleared');
+      }
       return;
     }
-    if (this.netEnabled && !this.isNetHost) return;
-    const raidersAlive = this.units.some((u) => u.alive && u.team === TEAMS.RAIDERS);
-    const sentAlive = this.units.some((u) => u.alive && u.team === TEAMS.SENTINELS);
+
     if (!sentAlive) this.endRound(TEAMS.RAIDERS, 'Sentinels eliminated');
     else if (!raidersAlive && !this.bomb.planted) this.endRound(TEAMS.SENTINELS, 'Raiders eliminated');
   }

@@ -1,6 +1,6 @@
 import {
   CATEGORIES, VEHICLES, GEAR, formatMoney, formatTime, TEAMS, BOT_NAMES,
-  BUY_VOTE_OPTIONS, BUY_TIME_MAX,
+  BUY_VOTE_OPTIONS, BUY_TIME_MAX, BOMB_TIME, BOMB_TIMER_OPTIONS,
 } from './config.js';
 import { CASES, KEYS, SKINS, RARITY, rarityColor, shopSkinCatalog } from './skins.js';
 import { GEAR_ITEMS, gearItemImageDataUrl } from './gearItems.js';
@@ -93,9 +93,13 @@ export function createUI(game, inventory, opts = {}) {
   function updateMmDeployLabel() {
     const btn = $('btn-mm-deploy');
     if (!btn) return;
+    const fuseWrap = $('mm-bomb-fuse-wrap');
+    const fuseSel = $('mm-bomb-fuse');
     if (!mmNetMode) {
       btn.textContent = 'DEPLOY NOW';
       btn.disabled = false;
+      fuseWrap?.classList.remove('hidden');
+      if (fuseSel) fuseSel.disabled = false;
       return;
     }
     const host = !!(net?.isLobbyHost || iAmDev());
@@ -103,6 +107,18 @@ export function createUI(game, inventory, opts = {}) {
     btn.textContent = host
       ? (iAmDev() ? 'DEV DEPLOY' : 'DEPLOY NOW (HOST)')
       : 'WAITING FOR HOST…';
+    // Only host sets the warhead fuse for the shared match
+    fuseWrap?.classList.toggle('hidden', !host);
+    if (fuseSel) fuseSel.disabled = !host;
+  }
+
+  function applyHostBombFuse() {
+    const sel = $('mm-bomb-fuse');
+    const raw = Number(sel?.value || BOMB_TIME);
+    const allowed = BOMB_TIMER_OPTIONS.includes(raw) ? raw : BOMB_TIME;
+    game.bombFuse = allowed;
+    game.setBombFuse?.(allowed);
+    return allowed;
   }
 
   function pushChat(msg) {
@@ -414,6 +430,9 @@ export function createUI(game, inventory, opts = {}) {
       mapId = fromNetStart.mapId || opsMap;
       modeId = fromNetStart.modeId || opsMode;
       matchId = fromNetStart.matchId;
+      if (typeof fromNetStart.bombFuse === 'number') {
+        game.bombFuse = fromNetStart.bombFuse;
+      }
       mmRoster = {
         raiders: (roster.raiders || []).map((s) => ({ ...s })),
         sentinels: (roster.sentinels || []).map((s) => ({ ...s })),
@@ -474,12 +493,14 @@ export function createUI(game, inventory, opts = {}) {
             else roster[side].push(slot);
           }
         }
+        const fuse = applyHostBombFuse();
         net.publishMatchStart({
           matchId,
           mapId,
           modeId,
           team,
           roster,
+          bombFuse: fuse,
         });
         net.attachMatch(matchId, true);
       } else if (netMode && !hostNow) {
@@ -1210,8 +1231,18 @@ export function createUI(game, inventory, opts = {}) {
       net.forceLobbyHost?.();
       toast('DEV forced lobby host');
     }
+    if (!mmNetMode || net?.isLobbyHost || iAmDev()) {
+      const fuse = applyHostBombFuse();
+      toast(`Warhead fuse ${fuse}s`);
+    }
     launchMatchFromMm();
   };
+  $('mm-bomb-fuse')?.addEventListener('change', () => {
+    if (mmNetMode && net && !net.isLobbyHost && !iAmDev()) return;
+    const fuse = applyHostBombFuse();
+    SFX.ui();
+    toast(`Warhead fuse ${fuse}s`);
+  });
   $('btn-buy-close').onclick = () => game.closeBuyMenu();
 
   // Chat panel
