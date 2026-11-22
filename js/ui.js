@@ -112,12 +112,23 @@ export function createUI(game, inventory, opts = {}) {
     if (fuseSel) fuseSel.disabled = !host;
   }
 
-  function applyHostBombFuse() {
+  let mmLaunchFuse = null; // locked when Deploy begins so startMatch matches published payload
+
+  function applyHostBombFuse({ lock = false } = {}) {
+    if (lock && mmLaunchFuse != null) {
+      game.bombFuse = mmLaunchFuse;
+      return mmLaunchFuse;
+    }
     const sel = $('mm-bomb-fuse');
     const raw = Number(sel?.value || BOMB_TIME);
     const allowed = BOMB_TIMER_OPTIONS.includes(raw) ? raw : BOMB_TIME;
     game.bombFuse = allowed;
-    game.setBombFuse?.(allowed);
+    if (lock) {
+      mmLaunchFuse = allowed;
+      if (sel) sel.disabled = true;
+    } else if (!mmLaunching) {
+      game.setBombFuse?.(allowed);
+    }
     return allowed;
   }
 
@@ -308,7 +319,10 @@ export function createUI(game, inventory, opts = {}) {
       unsubLobby();
       unsubLobby = null;
     }
-    if (!preserveMatch) mmLaunching = false;
+    if (!preserveMatch) {
+      mmLaunching = false;
+      mmLaunchFuse = null;
+    }
     mmNetMode = false;
     mmLobbyMembers = new Map();
     if (net) {
@@ -401,6 +415,15 @@ export function createUI(game, inventory, opts = {}) {
   function launchMatchFromMm(fromNetStart = null) {
     if (mmLaunching) return;
     mmLaunching = true;
+    // Lock fuse for this launch (host / offline). Peers take fuse from start payload.
+    if (fromNetStart && typeof fromNetStart.bombFuse === 'number') {
+      mmLaunchFuse = fromNetStart.bombFuse;
+      game.bombFuse = fromNetStart.bombFuse;
+      const fuseSel = $('mm-bomb-fuse');
+      if (fuseSel) fuseSel.disabled = true;
+    } else {
+      applyHostBombFuse({ lock: true });
+    }
 
     // Capture BEFORE teardown — stopMatchmaking used to zero mmNetMode / leaveLobby
     // (clearing isLobbyHost + lobbyId) so publishMatchStart never ran and humans
@@ -431,6 +454,7 @@ export function createUI(game, inventory, opts = {}) {
       modeId = fromNetStart.modeId || opsMode;
       matchId = fromNetStart.matchId;
       if (typeof fromNetStart.bombFuse === 'number') {
+        mmLaunchFuse = fromNetStart.bombFuse;
         game.bombFuse = fromNetStart.bombFuse;
       }
       mmRoster = {
@@ -493,7 +517,7 @@ export function createUI(game, inventory, opts = {}) {
             else roster[side].push(slot);
           }
         }
-        const fuse = applyHostBombFuse();
+        const fuse = mmLaunchFuse ?? applyHostBombFuse({ lock: true });
         net.publishMatchStart({
           matchId,
           mapId,
@@ -534,8 +558,10 @@ export function createUI(game, inventory, opts = {}) {
     }
 
     const delay = fromNetStart ? 200 : 650;
+    const fuseForStart = mmLaunchFuse ?? game.bombFuse ?? BOMB_TIME;
     setTimeout(() => {
       stopMatchmaking(true, { preserveMatch: !!matchId });
+      game.bombFuse = fuseForStart;
       game.startMatch({
         team,
         mapId,
@@ -549,6 +575,7 @@ export function createUI(game, inventory, opts = {}) {
           clientId: net.clientId,
         } : null,
       });
+      mmLaunchFuse = null;
     }, delay);
   }
 
@@ -686,6 +713,7 @@ export function createUI(game, inventory, opts = {}) {
         ? 'Offline search — Raiders locked. AI will fill empty seats…'
         : 'Offline search — Sentinels locked. AI will fill empty seats…';
     }
+    updateMmDeployLabel();
 
     mmTimer = setInterval(() => {
       // Host (or offline) owns the countdown
@@ -1232,12 +1260,13 @@ export function createUI(game, inventory, opts = {}) {
       toast('DEV forced lobby host');
     }
     if (!mmNetMode || net?.isLobbyHost || iAmDev()) {
-      const fuse = applyHostBombFuse();
+      const fuse = applyHostBombFuse({ lock: true });
       toast(`Warhead fuse ${fuse}s`);
     }
     launchMatchFromMm();
   };
   $('mm-bomb-fuse')?.addEventListener('change', () => {
+    if (mmLaunching || mmLaunchFuse != null) return;
     if (mmNetMode && net && !net.isLobbyHost && !iAmDev()) return;
     const fuse = applyHostBombFuse();
     SFX.ui();

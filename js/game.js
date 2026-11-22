@@ -329,6 +329,7 @@ export class Game {
       for (const t of this._matchOverRetries) clearTimeout(t);
     }
     this._matchOverRetries = [];
+    this._matchOverMeta = null;
     if (Array.isArray(this._unsubNet)) {
       for (const off of this._unsubNet) off?.();
     }
@@ -636,11 +637,11 @@ export class Game {
       this.phaseLabel = data.phaseLabel || data.phase.toUpperCase();
     }
     if (data.score) this.score = { ...data.score };
-    // Host finished the match — clients must always get congrats + return to menu
+    // Host finished the match — each peer scores win/loss from their own team
     if (!this._finishing && data.matchOver) {
-      const won = typeof data.playerWon === 'boolean'
-        ? data.playerWon
-        : (data.winnerTeam ? data.winnerTeam === this.player?.team : false);
+      const won = data.winnerTeam
+        ? data.winnerTeam === this.player?.team
+        : !!data.playerWon;
       this.finishMatch(!!won, data.reason || 'Match complete');
       return;
     }
@@ -826,9 +827,21 @@ export class Game {
       const result = ai.takeDamage(amount, attacker, pen);
       if (result.killed) {
         if (attacker && attacker !== ai) {
-          attacker.kills += 1;
           this.frags[attacker.team] = (this.frags[attacker.team] || 0) + 1;
-          attacker.money = Math.min(MAX_MONEY, attacker.money + KILL_REWARD);
+          if (attacker.isRemote && attacker.netId) {
+            // Owning client must apply kill/money — host replica is overwritten by their snapshot
+            this.net?.publishEvent?.({
+              type: 'aiKillAward',
+              eventId: this._netEventId('ai-kill'),
+              targetNetId: attacker.netId,
+              reward: KILL_REWARD,
+              weapon: data.weapon || 'HIT',
+              victimName: ai.name,
+            });
+          } else {
+            attacker.kills += 1;
+            attacker.money = Math.min(MAX_MONEY, attacker.money + KILL_REWARD);
+          }
         }
         SFX.kill();
         this.beginDeathFall(ai);
@@ -836,6 +849,20 @@ export class Game {
         this._transferBombFrom(ai);
         this.checkElimination();
         this.checkModeObjectives();
+      }
+      return;
+    }
+
+    // Host-confirmed AI kill — award credit on the shooter's machine
+    if (data.type === 'aiKillAward' && data.targetNetId === this._myNetId && this.player) {
+      this.player.kills += 1;
+      this.player.money = Math.min(
+        MAX_MONEY,
+        this.player.money + (Number(data.reward) || KILL_REWARD)
+      );
+      SFX.kill();
+      if (data.victimName) {
+        this.ui?.toast?.(`Eliminated ${data.victimName}`, 1400);
       }
     }
   }
@@ -922,7 +949,7 @@ export class Game {
       const carrier = this.bomb.carrier;
       const carrierNetId = carrier?.netId
         || (carrier?.isPlayer ? this._myNetId : null);
-      this.net.publishMatchMeta({
+      const meta = {
         phase: this.phase,
         phaseLabel: this.phaseLabel,
         timer: this.timer,
@@ -940,7 +967,10 @@ export class Game {
           carrierId: carrier?.id || null,
         },
         roundNumber: this.roundNumber,
-      });
+      };
+      // Keep terminal result on the tick stream so a missed QoS-0 matchOver can still recover
+      if (this._matchOverMeta) Object.assign(meta, this._matchOverMeta);
+      this.net.publishMatchMeta(meta);
     }
   }
 
@@ -1191,9 +1221,12 @@ export class Game {
       this._roundTimer = null;
     }
     // Tell peers immediately so they are not left sitting in a dead LIVE phase.
-    // Meta is QoS 0 — republish a few times so a dropped packet does not strand clients.
+    // Meta is QoS 0 — store + republish so a dropped packet does not strand clients.
     if (this.netEnabled && this.isNetHost) {
-      const overMeta = {
+      const winnerTeam = playerWon ? this.player?.team : (
+        this.player?.team === TEAMS.RAIDERS ? TEAMS.SENTINELS : TEAMS.RAIDERS
+      );
+      this._matchOverMeta = {
         phase: PHASE.END,
         phaseLabel: 'END',
         timer: 0,
@@ -1201,14 +1234,12 @@ export class Game {
         frags: this.frags,
         matchOver: true,
         playerWon: !!playerWon,
-        winnerTeam: playerWon ? this.player?.team : (
-          this.player?.team === TEAMS.RAIDERS ? TEAMS.SENTINELS : TEAMS.RAIDERS
-        ),
+        winnerTeam,
         reason: reason || '',
         roundNumber: this.roundNumber,
       };
       const pushOver = () => {
-        try { this.net?.publishMatchMeta?.(overMeta); } catch { /* ignore */ }
+        try { this.net?.publishMatchMeta?.(this._matchOverMeta); } catch { /* ignore */ }
       };
       pushOver();
       if (this._matchOverRetries) {
@@ -2754,14 +2785,8 @@ export class Game {
       return;
     }
     if (this.mode?.bots === 'waves') {
+      // Endless siege: kill-target ends the match; clearing a wave spawns the next
       this.checkModeObjectives();
-      if (this.phase === PHASE.END) return;
-      const enemiesLeft = this.units.some(
-        (u) => u.alive && !u.dying && !u.isPlayer && u.team !== this.player?.team
-      );
-      if (!enemiesLeft && (this.waveKills || 0) > 0) {
-        this.finishMatch(true, 'Siege cleared');
-      }
       return;
     }
 
